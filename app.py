@@ -73,7 +73,7 @@ def formatta_excel(writer, sheet_name):
 
 # Cerca di caricare il logo. Se hai chiamato il file "logo.png" su GitHub, apparirà.
 try:
-    st.image("logo.png", width=250)
+    st.image("Valsecchi_trasporti_logo.png", width=250)
 except Exception:
     pass
 
