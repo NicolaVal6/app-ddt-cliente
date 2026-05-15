@@ -41,7 +41,6 @@ def formatta_excel_casati(writer, sheet_name, cliente_nome, info_anagrafica=""):
     workbook = writer.book
     worksheet = writer.sheets[sheet_name]
     
-    # RIGA 2 e 3: Intestazioni fisse aziendali
     testo_spettabile = info_anagrafica if info_anagrafica else cliente_nome
     worksheet['A2'] = f"SPETT.LE   {testo_spettabile}"
     worksheet['A2'].font = Font(bold=True, size=11)
@@ -49,30 +48,24 @@ def formatta_excel_casati(writer, sheet_name, cliente_nome, info_anagrafica=""):
     worksheet['A3'] = "RIF. NS FATT. N. ........ DEL  ..../..../202.."
     worksheet['A3'].font = Font(bold=True)
 
-    # RIGA 5: Intestazioni tabella dati
     header_font = Font(bold=True, color="FFFFFF")
     header_fill = PatternFill(start_color="002060", end_color="002060", fill_type="solid")
     
-    # Formatta la riga 5 (dove ora risiedono le intestazioni delle colonne)
     for cell in worksheet[5]:
         cell.font = header_font
         cell.fill = header_fill
 
-    date_cols_to_format = ['DATA DDT']
+    date_cols_to_format = ['DATA DDT', 'DATA DI CARICO']
 
-    # Auto-Fit colonne e formato Data
     for col_idx, col in enumerate(worksheet.columns, 1):
         max_length = 0
         column_letter = get_column_letter(col_idx)
         header_value = worksheet.cell(row=5, column=col_idx).value
 
         for cell in col:
-            # Formato Data solo dalla riga 6 in giù
             if header_value in date_cols_to_format and cell.row > 5:
                 cell.number_format = 'DD/MM/YYYY'
-            
             try:
-                # Calcolo larghezza: ignoriamo le righe 1-4 per non sballare le colonne a causa di 'A2' e 'A3' lunghi
                 if cell.value and cell.row > 4:
                     val_str = str(cell.value)
                     if len(val_str) > max_length:
@@ -117,7 +110,6 @@ except Exception:
 
 st.title("🚛 Generatore File DDT - Advanced")
 
-# Doppio Uploader
 col1, col2 = st.columns(2)
 with col1:
     uploaded_file = st.file_uploader("1. File Mensile Trasporti (Dati)", type=["xlsx", "csv"])
@@ -127,7 +119,6 @@ with col2:
 if uploaded_file is not None:
     if st.button("Elabora Dati", type="primary"):
         try:
-            # Costruisce il dizionario anagrafiche se il file è stato caricato
             anagrafiche_dict = {}
             if uploaded_anagrafica is not None:
                 df_ana = pd.read_excel(uploaded_anagrafica) if uploaded_anagrafica.name.endswith('.xlsx') else pd.read_csv(uploaded_anagrafica)
@@ -135,54 +126,70 @@ if uploaded_file is not None:
                 if 'CLIENTE' in df_ana.columns and 'INTESTAZIONE COMPLETA' in df_ana.columns:
                     anagrafiche_dict = dict(zip(df_ana['CLIENTE'].astype(str).str.upper().str.strip(), df_ana['INTESTAZIONE COMPLETA']))
 
-            # Lettura e pulizia Dati Mensili
+            # Lettura file principale
             df = pd.read_csv(uploaded_file) if uploaded_file.name.lower().endswith('.csv') else pd.read_excel(uploaded_file)
             df.columns = df.columns.str.strip().str.upper()
+            
+            # PULIZIA: Rimuove le colonne vuote o fantasma (es. Unnamed: 3 generato dalle doppie virgole del gestionale)
+            df = df.loc[:, ~df.columns.str.contains('^UNNAMED', na=False)]
 
+            # Formattazione Date Universale
             date_columns = ['DATA DI CARICO', 'DATA DDT']
             for col in date_columns:
                 if col in df.columns:
                     df[col] = pd.to_datetime(df[col], errors='coerce')
             
-            first_valid = df['DATA DDT'].dropna()
-            mese_str = first_valid.iloc[0].strftime("%Y-%m") if not first_valid.empty else "MESE_IGNOTO"
+            # Estrazione Mese per rinomina ZIP
+            if 'DATA DDT' in df.columns:
+                first_valid = df['DATA DDT'].dropna()
+                mese_str = first_valid.iloc[0].strftime("%Y-%m") if not first_valid.empty else "MESE_IGNOTO"
+            else:
+                mese_str = "MESE_IGNOTO"
             
             zip_buffer = io.BytesIO()
             with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
                 
                 # --- LOGICA CLIENTI (STILE CASATI) ---
-                # Colonne da prelevare e relativa mappatura dei nomi
-                cols_origine = ['DITTA DI CARICO', 'LUOGO DI CARICO', 'DESTINAZIONE', 'VARIE', 'PESO', 'TARIFFA', 'TOTALE', 'N. DDT', 'DATA DDT']
+                # Mappatura Universale (vecchio file o nuovo gestionale) alle colonne Target definitive
                 mappa_rinomina = {
                     'DITTA DI CARICO': 'DITTA PRESA',
                     'LUOGO DI CARICO': 'LUOGO PRESA',
                     'DESTINAZIONE': 'DESTINAZIONE FINALE',
-                    'PESO': "QUANTITA'"
+                    'VARIE': 'VARIE',
+                    'TIPO MERCE': 'VARIE',
+                    'PESO': "QUANTITA'",
+                    'QUANTITA': "QUANTITA'",
+                    'N. DDT': 'N. DDT',
+                    'DDT': 'N. DDT'
                 }
                 
-                # Filtra solo le colonne che esistono davvero nel file
-                cols_effettive = [col for col in cols_origine if col in df.columns]
+                # Rinomina preventiva sul dataframe copiato per i clienti
+                df_clienti = df.rename(columns=mappa_rinomina)
                 
-                for cliente, group in df.groupby('CLIENTE'):
-                    safe_cliente = sanitize_filename(cliente)
-                    filename = f"Clienti/{safe_cliente}_{mese_str}.xlsx"
-                    
-                    excel_buffer = io.BytesIO()
-                    with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
-                        # Estrae, rinomina le colonne e scarta 'DATA DI CARICO'
-                        group_to_export = group[cols_effettive].rename(columns=mappa_rinomina)
+                # Colonne che il cliente vuole nel file finale (se esistono)
+                cols_target_finali = ['DITTA PRESA', 'LUOGO PRESA', 'DESTINAZIONE FINALE', 'VARIE', "QUANTITA'", 'TARIFFA', 'TOTALE', 'N. DDT', 'DATA DDT']
+                cols_effettive_esportazione = [col for col in cols_target_finali if col in df_clienti.columns]
+                
+                if 'CLIENTE' in df.columns:
+                    for cliente, group in df.groupby('CLIENTE'):
+                        safe_cliente = sanitize_filename(cliente)
+                        filename = f"Clienti/{safe_cliente}_{mese_str}.xlsx"
                         
-                        # startrow=4 significa che le intestazioni di colonna iniziano alla riga 5 di Excel
-                        group_to_export.to_excel(writer, index=False, sheet_name='Dati_DDT', startrow=4)
+                        excel_buffer = io.BytesIO()
+                        with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+                            # Prende il gruppo mappato, isola le colonne target e esporta
+                            group_mapped = df_clienti.loc[group.index]
+                            group_to_export = group_mapped[cols_effettive_esportazione]
+                            
+                            group_to_export.to_excel(writer, index=False, sheet_name='Dati_DDT', startrow=4)
+                            
+                            info_ana = anagrafiche_dict.get(str(cliente).upper().strip(), "")
+                            formatta_excel_casati(writer, 'Dati_DDT', cliente, info_ana)
                         
-                        # Cerca il cliente nel dizionario anagrafiche (fallback sul nome se non trovato)
-                        info_ana = anagrafiche_dict.get(str(cliente).upper().strip(), "")
-                        
-                        formatta_excel_casati(writer, 'Dati_DDT', cliente, info_ana)
-                    
-                    zip_file.writestr(filename, excel_buffer.getvalue())
+                        zip_file.writestr(filename, excel_buffer.getvalue())
                 
                 # --- LOGICA AUTISTI (STILE STANDARD) ---
+                # Per gli autisti esportiamo tutte le colonne (senza le vuote/unnamed, già rimosse in alto)
                 if 'AUTISTA AL CARICO' in df.columns:
                     for autista, group in df.groupby('AUTISTA AL CARICO'):
                         safe_autista = sanitize_filename(autista)
@@ -195,11 +202,11 @@ if uploaded_file is not None:
                         
                         zip_file.writestr(filename, excel_buffer.getvalue())
 
-            st.success("✅ Elaborazione Stile CASATI completata!")
+            st.success("✅ Elaborazione (Input Gestionale) completata!")
             st.download_button(
                 label="📥 Scarica Archivio ZIP",
                 data=zip_buffer.getvalue(),
-                file_name=f"DDT_Elaborati_CASATI_{mese_str}.zip",
+                file_name=f"DDT_Elaborati_{mese_str}.zip",
                 mime="application/zip"
             )
 
