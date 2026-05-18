@@ -8,8 +8,8 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
 
 # --- CONFIGURAZIONE DI SISTEMA ---
-st.set_page_config(page_title="Trasporti App v7.2", layout="centered")
-st.caption("Versione Sistema: 7.2 (Visualizzazione Pagine A4 + Righe 24.9)")
+st.set_page_config(page_title="Trasporti App v7.3", layout="centered")
+st.caption("Versione Sistema: 7.3 (Fix Scrittura Excel + Visualizzazione Pagine A4 + Righe 24.9)")
 
 PASSWORD_CLIENTE = "Trasporti2024!"
 
@@ -223,7 +223,8 @@ if uploaded_file and st.button("🚀 GENERA DOCUMENTI FISCALI", type="primary"):
                 safe_cliente = re.sub(r'[\\/*?:"<>|]', "", str(cliente)).strip()
                 buf = io.BytesIO()
                 
-                with pd.ExcelWriter(buf, io_engine='openpyxl') as writer:
+                # FIX APPLICATO QUI: engine='openpyxl' (non io_engine)
+                with pd.ExcelWriter(buf, engine='openpyxl') as writer:
                     data_export = group[cols_presenti]
                     data_export.to_excel(writer, index=False, sheet_name='Prospetto_DDT', startrow=6)
                     
@@ -238,7 +239,8 @@ if uploaded_file and st.button("🚀 GENERA DOCUMENTI FISCALI", type="primary"):
                     safe_autista = re.sub(r'[\\/*?:"<>|]', "", str(autista)).strip()
                     buf = io.BytesIO()
                     
-                    with pd.ExcelWriter(buf, io_engine='openpyxl') as writer:
+                    # FIX APPLICATO QUI: engine='openpyxl' (non io_engine)
+                    with pd.ExcelWriter(buf, engine='openpyxl') as writer:
                         group.to_excel(writer, index=False, sheet_name='Prospetto_Autista')
                         formatta_excel_valsecchi(writer, 'Prospetto_Autista', is_casati=False)
                         
@@ -246,7 +248,7 @@ if uploaded_file and st.button("🚀 GENERA DOCUMENTI FISCALI", type="primary"):
             else:
                 st.warning("⚠️ Colonna 'AUTISTA ALLO SCARICO' non trovata nel file. Sezione autisti saltata.")
 
-        st.success("✅ Documenti aggiornati alla v7.2 e pronti!")
+        st.success("✅ Documenti aggiornati alla v7.3 e pronti!")
         st.download_button("📥 SCARICA ARCHIVIO COMPLETO", zip_buffer.getvalue(), f"Trasporti_Valsecchi_{mese_str}.zip", "application/zip")
 
     except Exception as e:
