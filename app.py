@@ -14,7 +14,7 @@ from openpyxl.utils import get_column_letter
 FONT_NOME = "Arial"                  # Es: "Calibri", "Arial", "Tahoma"
 FONT_DIMENSIONE_DATI = 10            # Dimensione del testo normale
 FONT_DIMENSIONE_SPETTABILE = 11      # Dimensione della scritta "SPETT.LE"
-COLORE_SFONDO_INTESTAZIONI = "D9D9D9" # Colore celle riga 5 (D9D9D9 = Grigio Chiaro. Usa "FFFF00" per Giallo, "B4C6E7" per Azzurro)
+COLORE_SFONDO_INTESTAZIONI = "B4C6E7" # Colore celle riga 5 (D9D9D9 = Grigio Chiaro. Usa "FFFF00" per Giallo, "B4C6E7" per Azzurro)
 COLORE_TESTO_INTESTAZIONI = "000000" # Colore testo riga 5 (000000 = Nero, FFFFFF = Bianco)
 ALTEZZA_RIGA_SPETTABILE = 25         # Quanto deve essere alta la riga 2
 ALTEZZA_RIGHE_DATI = 18              # Spaziatura verticale (altezza) delle righe della tabella
