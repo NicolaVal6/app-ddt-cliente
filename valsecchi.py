@@ -8,8 +8,8 @@ from openpyxl.styles import Font, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
 # --- CONFIGURAZIONE DI SISTEMA ---
-st.set_page_config(page_title="Trasporti App v6.0", layout="centered")
-st.caption("Versione Sistema: 6.0 (Specifiche Valsecchi Trasporti)")
+st.set_page_config(page_title="Trasporti App v6.1", layout="centered")
+st.caption("Versione Sistema: 6.1 (Fix Piè di Pagina - Specifiche Valsecchi)")
 
 PASSWORD_CLIENTE = "Trasporti2024!"
 
@@ -52,8 +52,8 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
 
     start_row_header = 6 if is_casati else 1
     
-    # Configurazione Piè di pagina (Numero di pagina)
-    worksheet.page_footer.center.text = "Pagina &P"
+    # FIX APPLICATO QUI: Comando corretto per il numero di pagina in openpyxl
+    worksheet.oddFooter.center.text = "Pagina &P"
 
     if is_casati:
         # Ripetizione Intestazioni su ogni pagina stampata
@@ -139,7 +139,8 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
             for col_idx in range(1, worksheet.max_column + 1):
                 c = worksheet.cell(row=total_row_idx, column=col_idx)
                 c.font = font_bold_standard
-                c.border = thin_border
+                if col_idx == totale_col_idx:
+                    c.border = thin_border
                 c.alignment = align_center
 
 
@@ -157,72 +158,4 @@ if uploaded_file and st.button("🚀 GENERA DOCUMENTI FISCALI", type="primary"):
         # Parsing Anagrafiche
         anagrafiche = {}
         if uploaded_anagrafica:
-            df_ana = pd.read_excel(uploaded_anagrafica) if uploaded_anagrafica.name.endswith('.xlsx') else pd.read_csv(uploaded_anagrafica)
-            df_ana.columns = df_ana.columns.str.strip().str.upper()
-            if 'CLIENTE' in df_ana.columns and 'INTESTAZIONE COMPLETA' in df_ana.columns:
-                anagrafiche = dict(zip(df_ana['CLIENTE'].astype(str).str.upper(), df_ana['INTESTAZIONE COMPLETA']))
-
-        # Lettura file trasporti
-        df = pd.read_excel(uploaded_file) if uploaded_file.name.endswith('.xlsx') else pd.read_csv(uploaded_file)
-        df.columns = df.columns.str.strip().str.upper()
-        df = df.loc[:, ~df.columns.str.contains('^UNNAMED', na=False)]
-
-        # Traduzione dizionario campi
-        mappa = {
-            'DITTA PRESA': 'DITTA PRESA', 'DITTA DI CARICO': 'DITTA PRESA',
-            'LUOGO PRESA': 'LUOGO PRESA', 'LUOGO DI CARICO': 'LUOGO PRESA',
-            'DESTINAZIONE FINALE': 'DESTINAZIONE FINALE', 'DESTINAZIONE': 'DESTINAZIONE FINALE',
-            'TIPO MERCE': 'VARIE', 'VARIE': 'VARIE',
-            'QUANTITA': "QUANTITA'", 'PESO': "QUANTITA'",
-            'DDT': 'N. DDT', 'N. DDT': 'N. DDT',
-            'TARIFFA': 'TARIFFA', 'TOTALE': 'TOTALE', 'DATA DDT': 'DATA DDT'
-        }
-        df_mapped = df.rename(columns=mappa)
-        
-        if 'DATA DDT' in df_mapped.columns:
-            df_mapped['DATA DDT'] = pd.to_datetime(df_mapped['DATA DDT'], errors='coerce').dt.date
-
-        # CONFIGURAZIONE RIGOROSA DELL'ORDINE COLONNE RICHIESTO (Sinistra -> Destra)
-        cols_ordinate = ["QUANTITA'", 'TARIFFA', 'TOTALE', 'N. DDT', 'DATA DDT', 'DITTA PRESA', 'LUOGO PRESA', 'DESTINAZIONE FINALE', 'VARIE']
-        cols_presenti = [c for c in cols_ordinate if c in df_mapped.columns]
-
-        first_valid = df_mapped['DATA DDT'].dropna() if 'DATA DDT' in df_mapped.columns else pd.Series()
-        mese_str = first_valid.iloc[0].strftime("%Y-%m") if not first_valid.empty else "MESE_IGNOTO"
-
-        zip_buffer = io.BytesIO()
-        with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
-            
-            # --- 1. GENERAZIONE EXCEL CLIENTI ---
-            for cliente, group in df_mapped.groupby('CLIENTE'):
-                safe_cliente = re.sub(r'[\\/*?:"<>|]', "", str(cliente)).strip()
-                buf = io.BytesIO()
-                
-                with pd.ExcelWriter(buf, engine='openpyxl') as writer:
-                    data_export = group[cols_presenti]
-                    # startrow=5 inserisce le intestazioni alla riga 6 di Excel
-                    data_export.to_excel(writer, index=False, sheet_name='Prospetto_DDT', startrow=5)
-                    
-                    info = anagrafiche.get(str(cliente).upper(), "")
-                    formatta_excel_valsecchi(writer, 'Prospetto_DDT', is_casati=True, cliente_nome=str(cliente), info_anagrafica=info)
-                
-                zip_file.writestr(f"Clienti/{safe_cliente}_{mese_str}.xlsx", buf.getvalue())
-
-            # --- 2. GENERAZIONE EXCEL AUTISTI CON FILTRO ALLO SCARICO ---
-            if 'AUTISTA ALLO SCARICO' in df.columns:
-                for autista, group in df.groupby('AUTISTA ALLO SCARICO'):
-                    safe_autista = re.sub(r'[\\/*?:"<>|]', "", str(autista)).strip()
-                    buf = io.BytesIO()
-                    
-                    with pd.ExcelWriter(buf, engine='openpyxl') as writer:
-                        group.to_excel(writer, index=False, sheet_name='Prospetto_Autista')
-                        formatta_excel_valsecchi(writer, 'Prospetto_Autista', is_casati=False)
-                    
-                    zip_file.writestr(f"Autisti/Scarico_{safe_autista}_{mese_str}.xlsx", buf.getvalue())
-            else:
-                st.warning("⚠️ Colonna 'AUTISTA ALLO SCARICO' non trovata nel file. Sezione autisti saltata.")
-
-        st.success("✅ Elaborazione completata secondo le specifiche Valsecchi Trasporti!")
-        st.download_button("📥 SCARICA ARCHIVIO COMPLETO", zip_buffer.getvalue(), f"Trasporti_Valsecchi_{mese_str}.zip", "application/zip")
-
-    except Exception as e:
-        st.error(f"Errore durante l'esecuzione del codice: {e}")
+            df_ana = pd.read_excel
