@@ -8,8 +8,8 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
 
 # --- CONFIGURAZIONE DI SISTEMA ---
-st.set_page_config(page_title="Trasporti App v7.5", layout="centered")
-st.caption("Versione Sistema: 7.5 (Stampa A4 Orizzontale Fissa)")
+st.set_page_config(page_title="Trasporti App v7.6", layout="centered")
+st.caption("Versione Sistema: 7.6 (Layout Valsecchi - Senza forzature di impaginazione)")
 
 PASSWORD_CLIENTE = "Trasporti2024!"
 
@@ -51,34 +51,8 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
     )
 
     start_row_header = 7 if is_casati else 1
-    
-    worksheet.oddFooter.center.text = "Pagina &P"
-
-    # =========================================================================
-    # 📑 REGOLAMENTO DI STAMPA A4 BLINDATO
-    # =========================================================================
-    # 1. Giriamo il foglio in Orizzontale per far entrare le 9 colonne comodamente
-    worksheet.page_setup.orientation = 'landscape' 
-    worksheet.page_setup.paperSize = 9  # A4
-    
-    # 2. Riduciamo i margini laterali per dare respiro al testo
-    worksheet.page_margins.left = 0.3
-    worksheet.page_margins.right = 0.3
-    
-    # 3. Forzatura assoluta: Larghezza 1 pagina, Altezza libera
-    worksheet.sheet_properties.pageSetUpPr.fitToPage = True
-    worksheet.page_setup.fitToWidth = 1
-    worksheet.page_setup.fitToHeight = False # False disabilita il limite verticale in openpyxl
-    
-    try:
-        worksheet.views.sheetView[0].view = 'pageLayout'
-        worksheet.sheet_view.showPageBreaks = True
-    except:
-        pass
-    # =========================================================================
 
     if is_casati:
-        worksheet.print_title_rows = '1:7'
         worksheet.row_dimensions[1].height = 45
         
         if os.path.exists("logo.png"):
@@ -235,7 +209,7 @@ if uploaded_file and st.button("🚀 GENERA DOCUMENTI FISCALI", type="primary"):
                         
                     zip_file.writestr(f"Autisti/Scarico_{safe_autista}_{mese_str}.xlsx", buf.getvalue())
 
-        st.success("✅ Layout di stampa A4 Orizzontale bloccato con successo!")
+        st.success("✅ Documenti elaborati senza vincoli di stampa!")
         st.download_button("📥 SCARICA ARCHIVIO COMPLETO", zip_buffer.getvalue(), f"Trasporti_Valsecchi_{mese_str}.zip", "application/zip")
 
     except Exception as e:
