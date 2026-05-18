@@ -8,8 +8,8 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
 
 # --- CONFIGURAZIONE DI SISTEMA ---
-st.set_page_config(page_title="Trasporti App v7.3", layout="centered")
-st.caption("Versione Sistema: 7.3 (Fix Scrittura Excel + Visualizzazione Pagine A4 + Righe 24.9)")
+st.set_page_config(page_title="Trasporti App v7.4", layout="centered")
+st.caption("Versione Sistema: 7.4 (Controllo Totale Stampa A4 Orizzontale/Verticale)")
 
 PASSWORD_CLIENTE = "Trasporti2024!"
 
@@ -44,7 +44,7 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
     align_center = Alignment(horizontal="center", vertical="center")
     align_left = Alignment(horizontal="left", vertical="center")
     
-    # Sfondo Azzurrino Intestazione
+    # Sfondo Azzurrino Intestazione Table
     fill_azzurrino = PatternFill(start_color="B4C6E7", end_color="B4C6E7", fill_type="solid")
     
     thin_border = Border(
@@ -54,22 +54,30 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
 
     start_row_header = 7 if is_casati else 1
     
-    # Piè di pagina dinamico per numero pagina
+    # Piè di pagina dinamico per numero pagina (centrato)
     worksheet.oddFooter.center.text = "Pagina &P"
 
-    # 1. FORZATURA DIVISIONE IN PAGINE VISIBILE ALL'APERTURA
-    worksheet.page_setup.orientation = 'portrait'
-    worksheet.page_setup.paperSize = 9  # Codice Excel per foglio A4
+    # =========================================================================
+    # 📑 REGOLAMENTO DI STAMPA A4 UNIFORME (Sbloccato per tutti i fogli)
+    # =========================================================================
+    worksheet.page_setup.orientation = 'portrait' # Orientamento Verticale
+    worksheet.page_setup.paperSize = 9            # Formato A4 Standard
     
-    # Questo comando costringe Excel a mostrare le interruzioni di pagina e la visualizzazione "Layout di Pagina"
+    # Costringe le colonne a stare in 1 pagina di larghezza, ma lascia scorrere le righe in verticale
+    worksheet.sheet_properties.pageSetUpPr.fitToPage = True
+    worksheet.page_setup.fitToWidth = 1           # Larghezza fissa (1 pagina)
+    worksheet.page_setup.fitToHeight = 0          # Altezza dinamica (va a pagina 2 solo se ha troppe righe)
+    
+    # Forza Excel ad aprirsi direttamente in modalità "Layout di Pagina" per vedere i fogli divisi
     try:
         worksheet.views.sheetView[0].view = 'pageLayout'
         worksheet.sheet_view.showPageBreaks = True
     except:
         pass
+    # =========================================================================
 
     if is_casati:
-        # Ripetizione automatica delle intestazioni (righe da 1 a 7) su ogni foglio stampato
+        # Ripetizione automatica delle intestazioni (righe da 1 a 7) in cima a ogni pagina stampata
         worksheet.print_title_rows = '1:7'
         
         # Configurazione geometrica casella Logo A1
@@ -85,7 +93,7 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
             except:
                 pass
         
-        # 2. INTESTAZIONE VALSECCHI: Spostata in A2, a capo interno, bloccata a larghezza 30.9
+        # 2. INTESTAZIONE VALSECCHI: Cella A2 con larghezza bloccata e a capo interno
         worksheet.row_dimensions[2].height = 65 
         cell_azienda = worksheet['A2']
         cell_azienda.value = "VALSECCHI TRASPORTI S.R.L.\nVIA GIUSEPPE PARINI N. 8\nCESANA BRIANZA (LC)\nP.IVA 01932020132"
@@ -107,9 +115,9 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
         cell_fatt.alignment = align_left
         worksheet.row_dimensions[5].height = 18
 
-    # 5. MODIFICA 1: Formattazione Righe Tabella con Altezza Esatta a 24.9
+    # 5. Formattazione Righe Tabella con Altezza Esatta a 24.9
     for row in worksheet.iter_rows(min_row=start_row_header):
-        worksheet.row_dimensions[row[0].row].height = 24.9  # Imposta l'altezza riga richiesta
+        worksheet.row_dimensions[row[0].row].height = 24.9
         for cell in row:
             cell.font = font_bold_standard
             cell.border = thin_border
@@ -132,14 +140,14 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
                 if any(x in header_val for x in ['DATA', 'DDT']) and not isinstance(cell.value, str):
                     cell.number_format = 'DD/MM/YYYY'
         
-        # MODIFICA 2: Colonna A bloccata rigidamente a 30.9 per contenere l'intestazione Valsecchi
+        # Colonna A bloccata rigidamente a 30.9 per contenere l'intestazione Valsecchi
         if col_letter == 'A' and is_casati:
             worksheet.column_dimensions[col_letter].width = 30.9
         else:
             max_len = max(len(str(cell.value or '')) for cell in worksheet[col_letter] if cell.row >= start_row_header)
             worksheet.column_dimensions[col_letter].width = max(max_len + 4, 16)
 
-    # 6. CALCOLO AUTOMATICO DEL TOTALE DELLE SOMME SOTTO "DITTA PRESA"
+    # 6. CALCOLO AUTOMATICO DEL TOTALE SOTTO "DITTA PRESA"
     if is_casati:
         totale_col_idx = None
         for col_idx in range(1, worksheet.max_column + 1):
@@ -151,10 +159,10 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
             last_data_row = worksheet.max_row
             total_row_idx = last_data_row + 1
             
-            # Altezza fissa anche per la riga del totale
+            # Altezza fissa riga totale
             worksheet.row_dimensions[total_row_idx].height = 24.9
             
-            # Scritta TOTALE sotto la colonna DITTA PRESA (Colonna 1 / A)
+            # Scritta TOTALE sotto la colonna DITTA PRESA (Colonna A)
             cell_label = worksheet.cell(row=total_row_idx, column=1)
             cell_label.value = "TOTALE"
             
@@ -164,7 +172,7 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
             cell_sum.value = f"=SUM({col_letter}8:{col_letter}{last_data_row})"
             cell_sum.number_format = '#,##0.00'
             
-            # Disegna la griglia finale della riga totali
+            # Griglia riga totale
             for col_idx in range(1, worksheet.max_column + 1):
                 c = worksheet.cell(row=total_row_idx, column=col_idx)
                 c.font = font_bold_standard
@@ -223,7 +231,6 @@ if uploaded_file and st.button("🚀 GENERA DOCUMENTI FISCALI", type="primary"):
                 safe_cliente = re.sub(r'[\\/*?:"<>|]', "", str(cliente)).strip()
                 buf = io.BytesIO()
                 
-                # FIX APPLICATO QUI: engine='openpyxl' (non io_engine)
                 with pd.ExcelWriter(buf, engine='openpyxl') as writer:
                     data_export = group[cols_presenti]
                     data_export.to_excel(writer, index=False, sheet_name='Prospetto_DDT', startrow=6)
@@ -239,16 +246,15 @@ if uploaded_file and st.button("🚀 GENERA DOCUMENTI FISCALI", type="primary"):
                     safe_autista = re.sub(r'[\\/*?:"<>|]', "", str(autista)).strip()
                     buf = io.BytesIO()
                     
-                    # FIX APPLICATO QUI: engine='openpyxl' (non io_engine)
                     with pd.ExcelWriter(buf, engine='openpyxl') as writer:
                         group.to_excel(writer, index=False, sheet_name='Prospetto_Autista')
                         formatta_excel_valsecchi(writer, 'Prospetto_Autista', is_casati=False)
                         
                     zip_file.writestr(f"Autisti/Scarico_{safe_autista}_{mese_str}.xlsx", buf.getvalue())
             else:
-                st.warning("⚠️ Colonna 'AUTISTA ALLO SCARICO' non trovata nel file. Sezione autisti saltata.")
+                st.warning("⚠️ Colonna 'AUTISTA ALLO SCARICO' non trouvata. Salto autisti.")
 
-        st.success("✅ Documenti aggiornati alla v7.3 e pronti!")
+        st.success("✅ Documenti aggiornati alla v7.4 e pronti!")
         st.download_button("📥 SCARICA ARCHIVIO COMPLETO", zip_buffer.getvalue(), f"Trasporti_Valsecchi_{mese_str}.zip", "application/zip")
 
     except Exception as e:
