@@ -8,8 +8,8 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
 
 # --- CONFIGURAZIONE DI SISTEMA ---
-st.set_page_config(page_title="Trasporti App v7.1", layout="centered")
-st.caption("Versione Sistema: 7.1 (Fix Layout Cella Singola + Impaginazione A4)")
+st.set_page_config(page_title="Trasporti App v7.2", layout="centered")
+st.caption("Versione Sistema: 7.2 (Visualizzazione Pagine A4 + Righe 24.9)")
 
 PASSWORD_CLIENTE = "Trasporti2024!"
 
@@ -42,7 +42,6 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
     font_bold_calibri12 = Font(name='Calibri', size=12, bold=True, color="000000")
     
     align_center = Alignment(horizontal="center", vertical="center")
-    align_right_wrap = Alignment(horizontal="right", vertical="top", wrap_text=True)
     align_left = Alignment(horizontal="left", vertical="center")
     
     # Sfondo Azzurrino Intestazione
@@ -55,23 +54,26 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
 
     start_row_header = 7 if is_casati else 1
     
-    # Configurazione Piè di pagina dinamica per numero pagina
+    # Piè di pagina dinamico per numero pagina
     worksheet.oddFooter.center.text = "Pagina &P"
 
+    # 1. FORZATURA DIVISIONE IN PAGINE VISIBILE ALL'APERTURA
+    worksheet.page_setup.orientation = 'portrait'
+    worksheet.page_setup.paperSize = 9  # Codice Excel per foglio A4
+    
+    # Questo comando costringe Excel a mostrare le interruzioni di pagina e la visualizzazione "Layout di Pagina"
+    try:
+        worksheet.views.sheetView[0].view = 'pageLayout'
+        worksheet.sheet_view.showPageBreaks = True
+    except:
+        pass
+
     if is_casati:
-        # 1. OTTIMIZZAZIONE STAMPA A4 (Suddivisione automatica in pagine A4)
-        worksheet.page_setup.orientation = 'portrait'
-        worksheet.page_setup.paperSize = 9 # Codice standard Excel per foglio A4
-        worksheet.sheet_properties.pageSetUpPr.fitToPage = True
-        worksheet.page_setup.fitToWidth = 1  # Blocca le colonne dentro la larghezza di 1 pagina A4
-        worksheet.page_setup.fitToHeight = 0 # Permette alle righe di scorrere liberamente su più pagine alte
-        
         # Ripetizione automatica delle intestazioni (righe da 1 a 7) su ogni foglio stampato
         worksheet.print_title_rows = '1:7'
         
-        # Configurazione geometrica cella Logo A1
+        # Configurazione geometrica casella Logo A1
         worksheet.row_dimensions[1].height = 45
-        worksheet.column_dimensions['A'].width = 18
         
         if os.path.exists("logo.png"):
             try:
@@ -83,14 +85,14 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
             except:
                 pass
         
-        # 2. INTESTAZIONE VALSECCHI: Tutto a capo dentro un'unica cella (I2) senza invadere le altre
-        worksheet.row_dimensions[2].height = 65 # Spazio verticale per ospitare le 4 righe di testo
-        cell_azienda = worksheet.cell(row=2, column=9) # Colonna 9 = I
+        # 2. INTESTAZIONE VALSECCHI: Spostata in A2, a capo interno, bloccata a larghezza 30.9
+        worksheet.row_dimensions[2].height = 65 
+        cell_azienda = worksheet['A2']
         cell_azienda.value = "VALSECCHI TRASPORTI S.R.L.\nVIA GIUSEPPE PARINI N. 8\nCESANA BRIANZA (LC)\nP.IVA 01932020132"
         cell_azienda.font = font_bold_calibri12
-        cell_azienda.alignment = align_right_wrap
+        cell_azienda.alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
         
-        # 3. Spett.le Cliente a SINISTRA
+        # 3. Spett.le Cliente a SINISTRA (in A4)
         testo_spettabile = info_anagrafica if info_anagrafica else cliente_nome
         cell_spett = worksheet['A4']
         cell_spett.value = f"SPETT.LE   {testo_spettabile}"
@@ -104,11 +106,10 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
         cell_fatt.font = font_bold_standard
         cell_fatt.alignment = align_left
         worksheet.row_dimensions[5].height = 18
-        
-        # La riga 6 resta vuota come stacco grazie a startrow=6 impostato sotto
 
-    # 5. Formattazione Griglia Dati Tabella (Tutto Grassetto, Tutto Centrato)
+    # 5. MODIFICA 1: Formattazione Righe Tabella con Altezza Esatta a 24.9
     for row in worksheet.iter_rows(min_row=start_row_header):
+        worksheet.row_dimensions[row[0].row].height = 24.9  # Imposta l'altezza riga richiesta
         for cell in row:
             cell.font = font_bold_standard
             cell.border = thin_border
@@ -118,7 +119,7 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
     for cell in worksheet[start_row_header]:
         cell.fill = fill_azzurrino
 
-    # Formattazione Numeri Decimali e Date pulite
+    # Formattazione Numeri Decimali e Date
     for col_idx in range(1, worksheet.max_column + 1):
         col_letter = get_column_letter(col_idx)
         header_val = str(worksheet.cell(row=start_row_header, column=col_idx).value).upper()
@@ -131,11 +132,14 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
                 if any(x in header_val for x in ['DATA', 'DDT']) and not isinstance(cell.value, str):
                     cell.number_format = 'DD/MM/YYYY'
         
-        # Auto-fit dinamico per evitare scritte tagliate
-        max_len = max(len(str(cell.value or '')) for cell in worksheet[col_letter] if cell.row >= start_row_header)
-        worksheet.column_dimensions[col_letter].width = max(max_len + 4, 16)
+        # MODIFICA 2: Colonna A bloccata rigidamente a 30.9 per contenere l'intestazione Valsecchi
+        if col_letter == 'A' and is_casati:
+            worksheet.column_dimensions[col_letter].width = 30.9
+        else:
+            max_len = max(len(str(cell.value or '')) for cell in worksheet[col_letter] if cell.row >= start_row_header)
+            worksheet.column_dimensions[col_letter].width = max(max_len + 4, 16)
 
-    # 6. CALCOLO RIGOROSO DEL TOTALE DELLE SOMME SOTTO "DITTA PRESA"
+    # 6. CALCOLO AUTOMATICO DEL TOTALE DELLE SOMME SOTTO "DITTA PRESA"
     if is_casati:
         totale_col_idx = None
         for col_idx in range(1, worksheet.max_column + 1):
@@ -147,11 +151,14 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
             last_data_row = worksheet.max_row
             total_row_idx = last_data_row + 1
             
+            # Altezza fissa anche per la riga del totale
+            worksheet.row_dimensions[total_row_idx].height = 24.9
+            
             # Scritta TOTALE sotto la colonna DITTA PRESA (Colonna 1 / A)
             cell_label = worksheet.cell(row=total_row_idx, column=1)
             cell_label.value = "TOTALE"
             
-            # Formula SUM dinamica (Formato due decimali)
+            # Formula SUM dinamica
             col_letter = get_column_letter(totale_col_idx)
             cell_sum = worksheet.cell(row=total_row_idx, column=totale_col_idx)
             cell_sum.value = f"=SUM({col_letter}8:{col_letter}{last_data_row})"
@@ -201,7 +208,7 @@ if uploaded_file and st.button("🚀 GENERA DOCUMENTI FISCALI", type="primary"):
         if 'DATA DDT' in df_mapped.columns:
             df_mapped['DATA DDT'] = pd.to_datetime(df_mapped['DATA DDT'], errors='coerce').dt.date
 
-        # ORDINE SEQUENZIALE RICHIESTO DELLE COLONNE
+        # ORDINE SEQUENZIALE COLONNE RICHIESTO
         cols_ordinate = ['DITTA PRESA', 'LUOGO PRESA', 'DESTINAZIONE FINALE', 'VARIE', "QUANTITA'", 'TARIFFA', 'TOTALE', 'N. DDT', 'DATA DDT']
         cols_presenti = [c for c in cols_ordinate if c in df_mapped.columns]
 
@@ -216,9 +223,8 @@ if uploaded_file and st.button("🚀 GENERA DOCUMENTI FISCALI", type="primary"):
                 safe_cliente = re.sub(r'[\\/*?:"<>|]', "", str(cliente)).strip()
                 buf = io.BytesIO()
                 
-                with pd.ExcelWriter(buf, engine='openpyxl') as writer:
+                with pd.ExcelWriter(buf, io_engine='openpyxl') as writer:
                     data_export = group[cols_presenti]
-                    # startrow=6 posiziona le intestazioni di colonna alla riga 7 fissa
                     data_export.to_excel(writer, index=False, sheet_name='Prospetto_DDT', startrow=6)
                     
                     info = anagrafiche.get(str(cliente).upper(), "")
@@ -232,7 +238,7 @@ if uploaded_file and st.button("🚀 GENERA DOCUMENTI FISCALI", type="primary"):
                     safe_autista = re.sub(r'[\\/*?:"<>|]', "", str(autista)).strip()
                     buf = io.BytesIO()
                     
-                    with pd.ExcelWriter(buf, engine='openpyxl') as writer:
+                    with pd.ExcelWriter(buf, io_engine='openpyxl') as writer:
                         group.to_excel(writer, index=False, sheet_name='Prospetto_Autista')
                         formatta_excel_valsecchi(writer, 'Prospetto_Autista', is_casati=False)
                         
@@ -240,7 +246,7 @@ if uploaded_file and st.button("🚀 GENERA DOCUMENTI FISCALI", type="primary"):
             else:
                 st.warning("⚠️ Colonna 'AUTISTA ALLO SCARICO' non trovata nel file. Sezione autisti saltata.")
 
-        st.success("✅ Documenti pronti e ottimizzati per la stampa A4!")
+        st.success("✅ Documenti aggiornati alla v7.2 e pronti!")
         st.download_button("📥 SCARICA ARCHIVIO COMPLETO", zip_buffer.getvalue(), f"Trasporti_Valsecchi_{mese_str}.zip", "application/zip")
 
     except Exception as e:
