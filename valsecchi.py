@@ -8,8 +8,8 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
 
 # --- CONFIGURAZIONE DI SISTEMA ---
-st.set_page_config(page_title="Trasporti App v7.6", layout="centered")
-st.caption("Versione Sistema: 7.6 (Layout Valsecchi - Senza forzature di impaginazione)")
+st.set_page_config(page_title="Trasporti App v7.7", layout="centered")
+st.caption("Versione Sistema: 7.7 (Layout Standard + Stampa in Background con Pagine)")
 
 PASSWORD_CLIENTE = "Trasporti2024!"
 
@@ -52,7 +52,24 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
 
     start_row_header = 7 if is_casati else 1
 
+    # =========================================================================
+    # 📑 IMPOSTAZIONI DI STAMPA INVISIBILI (Attive solo quando si stampa/PDF)
+    # =========================================================================
+    # Inserisce il numero di pagina nel piè di pagina
+    worksheet.oddFooter.center.text = "Pagina &P"
+    
+    # Pre-imposta il foglio A4 orizzontale in background
+    worksheet.page_setup.orientation = 'landscape' 
+    worksheet.page_setup.paperSize = 9  
+    worksheet.sheet_properties.pageSetUpPr.fitToPage = True
+    worksheet.page_setup.fitToWidth = 1
+    worksheet.page_setup.fitToHeight = False
+    
+    # Nessuna forzatura della visualizzazione a schermo (resterà il Layout Normale)
+    # =========================================================================
+
     if is_casati:
+        worksheet.print_title_rows = '1:7' # Ripete l'intestazione in stampa
         worksheet.row_dimensions[1].height = 45
         
         if os.path.exists("logo.png"):
@@ -209,7 +226,7 @@ if uploaded_file and st.button("🚀 GENERA DOCUMENTI FISCALI", type="primary"):
                         
                     zip_file.writestr(f"Autisti/Scarico_{safe_autista}_{mese_str}.xlsx", buf.getvalue())
 
-        st.success("✅ Documenti elaborati senza vincoli di stampa!")
+        st.success("✅ Layout Excel classico ripristinato! Regole di stampa nascoste pronte.")
         st.download_button("📥 SCARICA ARCHIVIO COMPLETO", zip_buffer.getvalue(), f"Trasporti_Valsecchi_{mese_str}.zip", "application/zip")
 
     except Exception as e:
