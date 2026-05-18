@@ -8,8 +8,8 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
 
 # --- CONFIGURAZIONE DI SISTEMA ---
-st.set_page_config(page_title="Trasporti App v7.0", layout="centered")
-st.caption("Versione Sistema: 7.0 (Specifiche Valsecchi Layout Definitivo)")
+st.set_page_config(page_title="Trasporti App v7.1", layout="centered")
+st.caption("Versione Sistema: 7.1 (Fix Layout Cella Singola + Impaginazione A4)")
 
 PASSWORD_CLIENTE = "Trasporti2024!"
 
@@ -37,15 +37,15 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
     workbook = writer.book
     worksheet = writer.sheets[sheet_name]
     
-    # Stili Rigorosi (Tutto l'allegato rigorosamente in Grassetto)
+    # Stili Rigorosi (Tutto l'allegato in Grassetto)
     font_bold_standard = Font(name='Calibri', size=11, bold=True, color="000000")
     font_bold_calibri12 = Font(name='Calibri', size=12, bold=True, color="000000")
     
     align_center = Alignment(horizontal="center", vertical="center")
-    align_right = Alignment(horizontal="right", vertical="center")
+    align_right_wrap = Alignment(horizontal="right", vertical="top", wrap_text=True)
     align_left = Alignment(horizontal="left", vertical="center")
     
-    # Sfondo Azzurrino per l'intestazione della tabella
+    # Sfondo Azzurrino Intestazione
     fill_azzurrino = PatternFill(start_color="B4C6E7", end_color="B4C6E7", fill_type="solid")
     
     thin_border = Border(
@@ -55,18 +55,24 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
 
     start_row_header = 7 if is_casati else 1
     
-    # Configurazione Piè di pagina dinamica per la stampa
+    # Configurazione Piè di pagina dinamica per numero pagina
     worksheet.oddFooter.center.text = "Pagina &P"
 
     if is_casati:
-        # Ripetizione delle righe di intestazione (da 1 a 7) su ogni singola pagina stampata
+        # 1. OTTIMIZZAZIONE STAMPA A4 (Suddivisione automatica in pagine A4)
+        worksheet.page_setup.orientation = 'portrait'
+        worksheet.page_setup.paperSize = 9 # Codice standard Excel per foglio A4
+        worksheet.sheet_properties.pageSetUpPr.fitToPage = True
+        worksheet.page_setup.fitToWidth = 1  # Blocca le colonne dentro la larghezza di 1 pagina A4
+        worksheet.page_setup.fitToHeight = 0 # Permette alle righe di scorrere liberamente su più pagine alte
+        
+        # Ripetizione automatica delle intestazioni (righe da 1 a 7) su ogni foglio stampato
         worksheet.print_title_rows = '1:7'
         
-        # 1. Ingrandimento casella A1 per far alloggiare correttamente il logo
+        # Configurazione geometrica cella Logo A1
         worksheet.row_dimensions[1].height = 45
         worksheet.column_dimensions['A'].width = 18
         
-        # Iniezione automatica Logo in A1
         if os.path.exists("logo.png"):
             try:
                 from openpyxl.drawing.image import Image as OpenpyxlImage
@@ -77,21 +83,14 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
             except:
                 pass
         
-        # 2. Intestazione Aziendale Valsecchi a DESTRA (Formato Calibri Dim 12, a capo per riga)
-        azienda_lines = [
-            "VALSECCHI TRASPORTI S.R.L.",
-            "VIA GIUSEPPE PARINI N. 8",
-            "CESANA BRIANZA (LC)",
-            "P.IVA 01932020132"
-        ]
-        for idx, line in enumerate(azienda_lines, 1):
-            cell = worksheet.cell(row=idx, column=9) # Colonna 9 = I (Estrema destra della tabella)
-            cell.value = line
-            cell.font = font_bold_calibri12
-            cell.alignment = align_right
-            worksheet.row_dimensions[idx].height = 18
+        # 2. INTESTAZIONE VALSECCHI: Tutto a capo dentro un'unica cella (I2) senza invadere le altre
+        worksheet.row_dimensions[2].height = 65 # Spazio verticale per ospitare le 4 righe di testo
+        cell_azienda = worksheet.cell(row=2, column=9) # Colonna 9 = I
+        cell_azienda.value = "VALSECCHI TRASPORTI S.R.L.\nVIA GIUSEPPE PARINI N. 8\nCESANA BRIANZA (LC)\nP.IVA 01932020132"
+        cell_azienda.font = font_bold_calibri12
+        cell_azienda.alignment = align_right_wrap
         
-        # 3. Spett.le Cliente a SINISTRA (Formato Calibri Dim 12, a capo)
+        # 3. Spett.le Cliente a SINISTRA
         testo_spettabile = info_anagrafica if info_anagrafica else cliente_nome
         cell_spett = worksheet['A4']
         cell_spett.value = f"SPETT.LE   {testo_spettabile}"
@@ -106,20 +105,20 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
         cell_fatt.alignment = align_left
         worksheet.row_dimensions[5].height = 18
         
-        # Nota: La riga 6 rimane vuota ("linea di spazio") automaticamente grazie a startrow=6 in pandas
+        # La riga 6 resta vuota come stacco grazie a startrow=6 impostato sotto
 
-    # 5. Formattazione Griglia Dati (Tutto Grassetto, Tutto Centrato)
+    # 5. Formattazione Griglia Dati Tabella (Tutto Grassetto, Tutto Centrato)
     for row in worksheet.iter_rows(min_row=start_row_header):
         for cell in row:
             cell.font = font_bold_standard
             cell.border = thin_border
             cell.alignment = align_center
 
-    # Colore Azzurrino applicato solo alla riga di intestazione della tabella
+    # Applica sfondo azzurrino solo alla riga delle intestazioni (Riga 7)
     for cell in worksheet[start_row_header]:
         cell.fill = fill_azzurrino
 
-    # Formattazione Numerica (Due decimali) e Date pulite
+    # Formattazione Numeri Decimali e Date pulite
     for col_idx in range(1, worksheet.max_column + 1):
         col_letter = get_column_letter(col_idx)
         header_val = str(worksheet.cell(row=start_row_header, column=col_idx).value).upper()
@@ -132,11 +131,11 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
                 if any(x in header_val for x in ['DATA', 'DDT']) and not isinstance(cell.value, str):
                     cell.number_format = 'DD/MM/YYYY'
         
-        # Auto-fit colonne proporzionato per evitare testi troncati
+        # Auto-fit dinamico per evitare scritte tagliate
         max_len = max(len(str(cell.value or '')) for cell in worksheet[col_letter] if cell.row >= start_row_header)
         worksheet.column_dimensions[col_letter].width = max(max_len + 4, 16)
 
-    # 6. CALCOLO AUTOMATICO DEL TOTALE DELLE SOMME SOTTO LA COLONNA "DITTA PRESA"
+    # 6. CALCOLO RIGOROSO DEL TOTALE DELLE SOMME SOTTO "DITTA PRESA"
     if is_casati:
         totale_col_idx = None
         for col_idx in range(1, worksheet.max_column + 1):
@@ -148,17 +147,17 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
             last_data_row = worksheet.max_row
             total_row_idx = last_data_row + 1
             
-            # Scritta TOTALE rigorosamente sotto la colonna DITTA PRESA (Colonna 1 / A)
+            # Scritta TOTALE sotto la colonna DITTA PRESA (Colonna 1 / A)
             cell_label = worksheet.cell(row=total_row_idx, column=1)
             cell_label.value = "TOTALE"
             
-            # Iniezione della formula SUM dinamica sulla colonna TOTALE (Formato due decimali)
+            # Formula SUM dinamica (Formato due decimali)
             col_letter = get_column_letter(totale_col_idx)
             cell_sum = worksheet.cell(row=total_row_idx, column=totale_col_idx)
             cell_sum.value = f"=SUM({col_letter}8:{col_letter}{last_data_row})"
             cell_sum.number_format = '#,##0.00'
             
-            # Applica lo stile griglia e grassetto a tutta la riga finale dei totali
+            # Disegna la griglia finale della riga totali
             for col_idx in range(1, worksheet.max_column + 1):
                 c = worksheet.cell(row=total_row_idx, column=col_idx)
                 c.font = font_bold_standard
@@ -166,7 +165,7 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
                 c.alignment = align_center
 
 
-# --- INTERFACCIA WEB STREAMLIT ---
+# --- INTERFACCIA WEB ---
 try: st.image("logo.png", width=250)
 except: pass
 
@@ -177,7 +176,6 @@ uploaded_anagrafica = st.file_uploader("2. Carica Anagrafiche Clienti (Opzionale
 
 if uploaded_file and st.button("🚀 GENERA DOCUMENTI FISCALI", type="primary"):
     try:
-        # Parsing Anagrafiche
         anagrafiche = {}
         if uploaded_anagrafica:
             df_ana = pd.read_excel(uploaded_anagrafica) if uploaded_anagrafica.name.endswith('.xlsx') else pd.read_csv(uploaded_anagrafica)
@@ -185,12 +183,10 @@ if uploaded_file and st.button("🚀 GENERA DOCUMENTI FISCALI", type="primary"):
             if 'CLIENTE' in df_ana.columns and 'INTESTAZIONE COMPLETA' in df_ana.columns:
                 anagrafiche = dict(zip(df_ana['CLIENTE'].astype(str).str.upper(), df_ana['INTESTAZIONE COMPLETA']))
 
-        # Lettura file trasporti principale
         df = pd.read_excel(uploaded_file) if uploaded_file.name.endswith('.xlsx') else pd.read_csv(uploaded_file)
         df.columns = df.columns.str.strip().str.upper()
         df = df.loc[:, ~df.columns.str.contains('^UNNAMED', na=False)]
 
-        # Traduzione e uniformazione dei campi del gestionale
         mappa = {
             'DITTA PRESA': 'DITTA PRESA', 'DITTA DI CARICO': 'DITTA PRESA',
             'LUOGO PRESA': 'LUOGO PRESA', 'LUOGO DI CARICO': 'LUOGO PRESA',
@@ -205,7 +201,7 @@ if uploaded_file and st.button("🚀 GENERA DOCUMENTI FISCALI", type="primary"):
         if 'DATA DDT' in df_mapped.columns:
             df_mapped['DATA DDT'] = pd.to_datetime(df_mapped['DATA DDT'], errors='coerce').dt.date
 
-        # ORDINE TASSATIVO COLONNE (Richiesto al punto 5)
+        # ORDINE SEQUENZIALE RICHIESTO DELLE COLONNE
         cols_ordinate = ['DITTA PRESA', 'LUOGO PRESA', 'DESTINAZIONE FINALE', 'VARIE', "QUANTITA'", 'TARIFFA', 'TOTALE', 'N. DDT', 'DATA DDT']
         cols_presenti = [c for c in cols_ordinate if c in df_mapped.columns]
 
@@ -215,14 +211,14 @@ if uploaded_file and st.button("🚀 GENERA DOCUMENTI FISCALI", type="primary"):
         zip_buffer = io.BytesIO()
         with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
             
-            # --- 1. GENERAZIONE EXCEL CLIENTI ---
+            # --- 1. FILE CLIENTI ---
             for cliente, group in df_mapped.groupby('CLIENTE'):
                 safe_cliente = re.sub(r'[\\/*?:"<>|]', "", str(cliente)).strip()
                 buf = io.BytesIO()
                 
                 with pd.ExcelWriter(buf, engine='openpyxl') as writer:
                     data_export = group[cols_presenti]
-                    # startrow=6 inserisce la tabella a partire dalla riga 7 di Excel, lasciando lo spazio esatto sopra
+                    # startrow=6 posiziona le intestazioni di colonna alla riga 7 fissa
                     data_export.to_excel(writer, index=False, sheet_name='Prospetto_DDT', startrow=6)
                     
                     info = anagrafiche.get(str(cliente).upper(), "")
@@ -230,7 +226,7 @@ if uploaded_file and st.button("🚀 GENERA DOCUMENTI FISCALI", type="primary"):
                 
                 zip_file.writestr(f"Clienti/{safe_cliente}_{mese_str}.xlsx", buf.getvalue())
 
-            # --- 2. GENERAZIONE EXCEL AUTISTI CON FILTRO ALLO SCARICO ---
+            # --- 2. FILE AUTISTI (FILTRATO AD AUTISTA ALLO SCARICO) ---
             if 'AUTISTA ALLO SCARICO' in df.columns:
                 for autista, group in df.groupby('AUTISTA ALLO SCARICO'):
                     safe_autista = re.sub(r'[\\/*?:"<>|]', "", str(autista)).strip()
@@ -244,8 +240,8 @@ if uploaded_file and st.button("🚀 GENERA DOCUMENTI FISCALI", type="primary"):
             else:
                 st.warning("⚠️ Colonna 'AUTISTA ALLO SCARICO' non trovata nel file. Sezione autisti saltata.")
 
-        st.success("✅ Documenti elaborati secondo i criteri Valsecchi Trasporti!")
+        st.success("✅ Documenti pronti e ottimizzati per la stampa A4!")
         st.download_button("📥 SCARICA ARCHIVIO COMPLETO", zip_buffer.getvalue(), f"Trasporti_Valsecchi_{mese_str}.zip", "application/zip")
 
     except Exception as e:
-        st.error(f"Errore durante l'esecuzione del codice: {e}")
+        st.error(f"Errore: {e}")
