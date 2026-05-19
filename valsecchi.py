@@ -8,8 +8,8 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
 
 # --- CONFIGURAZIONE DI SISTEMA ---
-st.set_page_config(page_title="Trasporti App v7.9", layout="centered")
-st.caption("Versione Sistema: 7.9 (Fix Anagrafiche Flessibili + Pulizia Spazi)")
+st.set_page_config(page_title="Trasporti App v8.0", layout="centered")
+st.caption("Versione Sistema: 8.0 (Fix Anagrafica a Capo in Cella A4)")
 
 PASSWORD_CLIENTE = "Trasporti2024!"
 
@@ -85,19 +85,33 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
             except:
                 pass
         
+        # 1. INTESTAZIONE VALSECCHI TRASPORTI
         worksheet.row_dimensions[2].height = 65 
         cell_azienda = worksheet['A2']
         cell_azienda.value = "VALSECCHI TRASPORTI S.R.L.\nVIA GIUSEPPE PARINI N. 8\nCESANA BRIANZA (LC)\nP.IVA 01932020132"
         cell_azienda.font = font_bold_calibri12
         cell_azienda.alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
         
-        testo_spettabile = info_anagrafica if info_anagrafica else cliente_nome
+        # 2. FIX APPLICATO QUI: Suddivisione in blocchi (Nome, Via, CAP) e andata a capo interna in A4
+        if info_anagrafica:
+            # Splitta la stringa dove rileva 2 o più spazi consecutivi eliminando i vuoti
+            parti_indirizzo = [p.strip() for p in re.split(r'\s{2,}', str(info_anagrafica)) if p.strip()]
+            if parti_indirizzo:
+                parti_indirizzo[0] = f"SPETT.LE   {parti_indirizzo[0]}"
+                testo_finito = "\n".join(parti_indirizzo)
+            else:
+                testo_finito = f"SPETT.LE   {info_anagrafica}"
+        else:
+            testo_finito = f"SPETT.LE   {cliente_nome}"
+
         cell_spett = worksheet['A4']
-        cell_spett.value = f"SPETT.LE   {testo_spettabile}"
+        cell_spett.value = testo_finito
         cell_spett.font = font_bold_calibri12
-        cell_spett.alignment = align_left
-        worksheet.row_dimensions[4].height = 20
+        # Abilita wrap_text=True per forzare l'andata a capo visiva nella stessa cella
+        cell_spett.alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
+        worksheet.row_dimensions[4].height = 65 # Ingrandisce l'altezza della riga per mostrare i 3 elementi
         
+        # 3. RIFERIMENTO FATTURA
         cell_fatt = worksheet['A5']
         cell_fatt.value = "RIF. NS FATT. N. ........ DEL  ..../..../202.."
         cell_fatt.font = font_bold_standard
@@ -172,13 +186,11 @@ uploaded_anagrafica = st.file_uploader("2. Carica Anagrafiche Clienti (Opzionale
 
 if uploaded_file and st.button("🚀 GENERA DOCUMENTI FISCALI", type="primary"):
     try:
-        # FIX APPLICATO QUI: Riconoscimento automatico e flessibile della colonna intestazione + Rimozione Spazi
         anagrafiche = {}
         if uploaded_anagrafica:
             df_ana = pd.read_excel(uploaded_anagrafica) if uploaded_anagrafica.name.endswith('.xlsx') else pd.read_csv(uploaded_anagrafica)
             df_ana.columns = df_ana.columns.str.strip().str.upper()
             
-            # Cerca una colonna che contenga la parola INTESTAZIONE
             col_target = None
             for c in df_ana.columns:
                 if 'INTESTAZIONE' in c:
@@ -226,7 +238,6 @@ if uploaded_file and st.button("🚀 GENERA DOCUMENTI FISCALI", type="primary"):
                     data_export = group[cols_presenti]
                     data_export.to_excel(writer, index=False, sheet_name='Prospetto_DDT', startrow=6)
                     
-                    # FIX APPLICATO QUI: .strip() per ripulire la chiave di ricerca del cliente corrente
                     info = anagrafiche.get(str(cliente).upper().strip(), "")
                     formatta_excel_valsecchi(writer, 'Prospetto_DDT', is_casati=True, cliente_nome=str(cliente), info_anagrafica=info)
                 
@@ -243,7 +254,7 @@ if uploaded_file and st.button("🚀 GENERA DOCUMENTI FISCALI", type="primary"):
                         
                     zip_file.writestr(f"Autisti/Scarico_{safe_autista}_{mese_str}.xlsx", buf.getvalue())
 
-        st.success("✅ File elaborati correttamente con supporto anagrafiche v7.9!")
+        st.success("✅ File elaborati! L'anagrafica in A4 ora va correttamente a capo riga per riga.")
         st.download_button("📥 SCARICA ARCHIVIO COMPLETO", zip_buffer.getvalue(), f"Trasporti_Valsecchi_{mese_str}.zip", "application/zip")
 
     except Exception as e:
