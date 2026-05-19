@@ -8,8 +8,8 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
 
 # --- CONFIGURAZIONE DI SISTEMA ---
-st.set_page_config(page_title="Trasporti App v7.7", layout="centered")
-st.caption("Versione Sistema: 7.7 (Layout Standard + Stampa in Background con Pagine)")
+st.set_page_config(page_title="Trasporti App v7.8", layout="centered")
+st.caption("Versione Sistema: 7.8 (Ottimizzazione Cella Logo A1 + Supporto JPG/PNG)")
 
 PASSWORD_CLIENTE = "Trasporti2024!"
 
@@ -52,32 +52,35 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
 
     start_row_header = 7 if is_casati else 1
 
-    # =========================================================================
-    # 📑 IMPOSTAZIONI DI STAMPA INVISIBILI (Attive solo quando si stampa/PDF)
-    # =========================================================================
-    # Inserisce il numero di pagina nel piè di pagina
+    # Piè di pagina dinamico per numero pagina (Attivo in stampa/PDF)
     worksheet.oddFooter.center.text = "Pagina &P"
     
-    # Pre-imposta il foglio A4 orizzontale in background
+    # Pre-impostazioni di stampa A4 orizzontale in background
     worksheet.page_setup.orientation = 'landscape' 
     worksheet.page_setup.paperSize = 9  
     worksheet.sheet_properties.pageSetUpPr.fitToPage = True
     worksheet.page_setup.fitToWidth = 1
     worksheet.page_setup.fitToHeight = False
-    
-    # Nessuna forzatura della visualizzazione a schermo (resterà il Layout Normale)
-    # =========================================================================
 
     if is_casati:
         worksheet.print_title_rows = '1:7' # Ripete l'intestazione in stampa
-        worksheet.row_dimensions[1].height = 45
         
-        if os.path.exists("logo.png"):
+        # OTTIMIZZAZIONE LOGO: Riga 1 più alta (60) per alloggiare il nuovo logo senza tagli
+        worksheet.row_dimensions[1].height = 60
+        
+        # Controllo flessibile del file logo (cerca sia PNG che JPG/JPEG)
+        logo_path = None
+        for filename in ["logo.png", "logo.jpg", "logo.jpeg", "LOGO.jpg", "LOGO.PNG"]:
+            if os.path.exists(filename):
+                logo_path = filename
+                break
+        
+        if logo_path:
             try:
                 from openpyxl.drawing.image import Image as OpenpyxlImage
-                img = OpenpyxlImage("logo.png")
-                img.width = 110
-                img.height = 40
+                img = OpenpyxlImage(logo_path)
+                img.width = 150  # Larghezza ottimizzata
+                img.height = 50  # Altezza ottimizzata
                 worksheet.add_image(img, 'A1')
             except:
                 pass
@@ -101,6 +104,7 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
         cell_fatt.alignment = align_left
         worksheet.row_dimensions[5].height = 18
 
+    # Formattazione righe tabella (Altezza fissa 24.9)
     for row in worksheet.iter_rows(min_row=start_row_header):
         worksheet.row_dimensions[row[0].row].height = 24.9
         for cell in row:
@@ -123,6 +127,7 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
                 if any(x in header_val for x in ['DATA', 'DDT']) and not isinstance(cell.value, str):
                     cell.number_format = 'DD/MM/YYYY'
         
+        # Colonna A bloccata a 30.9 (ideale per contenere il logo e l'intestazione)
         if col_letter == 'A' and is_casati:
             worksheet.column_dimensions[col_letter].width = 30.9
         else:
@@ -158,7 +163,7 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
 
 
 # --- INTERFACCIA WEB ---
-try: st.image("logo.png", width=250)
+try: st.image("logo.png" if os.path.exists("logo.png") else "LOGO.jpg", width=250)
 except: pass
 
 st.title("🚛 Sistema Gestionale Valsecchi Trasporti")
@@ -226,7 +231,7 @@ if uploaded_file and st.button("🚀 GENERA DOCUMENTI FISCALI", type="primary"):
                         
                     zip_file.writestr(f"Autisti/Scarico_{safe_autista}_{mese_str}.xlsx", buf.getvalue())
 
-        st.success("✅ Layout Excel classico ripristinato! Regole di stampa nascoste pronte.")
+        st.success("✅ File elaborati con ottimizzazione logo v7.8!")
         st.download_button("📥 SCARICA ARCHIVIO COMPLETO", zip_buffer.getvalue(), f"Trasporti_Valsecchi_{mese_str}.zip", "application/zip")
 
     except Exception as e:
