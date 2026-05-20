@@ -8,8 +8,8 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
 
 # --- CONFIGURAZIONE DI SISTEMA ---
-st.set_page_config(page_title="Trasporti App v8.1", layout="centered")
-st.caption("Versione Sistema: 8.1 (Fix Allineamenti Colonne, Altezza Logo e Tipo DDT)")
+st.set_page_config(page_title="Trasporti App v8.2", layout="centered")
+st.caption("Versione Sistema: 8.2 (Logo in cm esatti: 2.4 h x 3.9 l)")
 
 PASSWORD_CLIENTE = "Trasporti2024!"
 
@@ -66,8 +66,8 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
     if is_casati:
         worksheet.print_title_rows = '1:7' # Ripete l'intestazione in stampa
         
-        # MODIFICA 1: Ingrandimento riga 1 (75) per dare spazio al logo più alto
-        worksheet.row_dimensions[1].height = 75
+        # Ingrandimento riga 1 a 80 per alloggiare comodamente i 2.4 cm (91px) di altezza del logo
+        worksheet.row_dimensions[1].height = 80
         
         # Controllo flessibile del file logo
         logo_path = None
@@ -80,8 +80,9 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
             try:
                 from openpyxl.drawing.image import Image as OpenpyxlImage
                 img = OpenpyxlImage(logo_path)
-                img.width = 150  
-                img.height = 65  # MODIFICA 1: Logo reso più alto per riproporzionarlo
+                # DIMENSIONI RICHIESTE: 3.9 cm x 2.4 cm convertiti in pixel standard
+                img.width = 147  # 3.9 cm
+                img.height = 91  # 2.4 cm
                 worksheet.add_image(img, 'A1')
             except:
                 pass
@@ -115,7 +116,7 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
         cell_fatt.alignment = align_left
         worksheet.row_dimensions[5].height = 18
 
-    # MODIFICA 2: Formattazione righe tabella (Altezza 24.9) + Allineamenti Condizionali Tassativi
+    # Formattazione righe tabella (Altezza 24.9) + Allineamenti Condizionali Tassativi
     for row in worksheet.iter_rows(min_row=start_row_header):
         worksheet.row_dimensions[row[0].row].height = 24.9
         for cell in row:
@@ -173,7 +174,6 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
             cell_sum.value = f"=SUM({col_letter}8:{col_letter}{last_data_row})"
             cell_sum.number_format = '#,##0.00'
             
-            # Disegna la griglia finale rispettando gli allineamenti (A-D SX, E-I DX)
             for col_idx in range(1, worksheet.max_column + 1):
                 c = worksheet.cell(row=total_row_idx, column=col_idx)
                 c.font = font_bold_standard
@@ -212,7 +212,6 @@ if uploaded_file and st.button("🚀 GENERA DOCUMENTI FISCALI", type="primary"):
                     df_ana[col_target].astype(str).str.strip()
                 ))
 
-        # MODIFICA 3: Pre-ispezione e forzatura del tipo testo per impedire a Excel/Pandas di convertire i N. DDT in Date
         if uploaded_file.name.endswith('.xlsx'):
             hdr = pd.read_excel(uploaded_file, nrows=0).columns
             uploaded_file.seek(0)
@@ -274,7 +273,7 @@ if uploaded_file and st.button("🚀 GENERA DOCUMENTI FISCALI", type="primary"):
                         
                     zip_file.writestr(f"Autisti/Scarico_{safe_autista}_{mese_str}.xlsx", buf.getvalue())
 
-        st.success("✅ File elaborati con successo (Versione 8.1 applicata)!")
+        st.success("✅ File elaborati con successo (Versione 8.2 applicata)!")
         st.download_button("📥 SCARICA ARCHIVIO COMPLETO", zip_buffer.getvalue(), f"Trasporti_Valsecchi_{mese_str}.zip", "application/zip")
 
     except Exception as e:
