@@ -8,8 +8,8 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
 
 # --- CONFIGURAZIONE DI SISTEMA ---
-st.set_page_config(page_title="Trasporti App v8.0", layout="centered")
-st.caption("Versione Sistema: 8.0 (Fix Anagrafica a Capo in Cella A4)")
+st.set_page_config(page_title="Trasporti App v8.1", layout="centered")
+st.caption("Versione Sistema: 8.1 (Fix Allineamenti Colonne, Altezza Logo e Tipo DDT)")
 
 PASSWORD_CLIENTE = "Trasporti2024!"
 
@@ -40,8 +40,9 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
     font_bold_standard = Font(name='Calibri', size=11, bold=True, color="000000")
     font_bold_calibri12 = Font(name='Calibri', size=12, bold=True, color="000000")
     
-    align_center = Alignment(horizontal="center", vertical="center")
+    # Definizione degli allineamenti richiesti
     align_left = Alignment(horizontal="left", vertical="center")
+    align_right = Alignment(horizontal="right", vertical="center")
     
     fill_azzurrino = PatternFill(start_color="B4C6E7", end_color="B4C6E7", fill_type="solid")
     
@@ -65,8 +66,8 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
     if is_casati:
         worksheet.print_title_rows = '1:7' # Ripete l'intestazione in stampa
         
-        # Righe Logo e Spaziature
-        worksheet.row_dimensions[1].height = 60
+        # MODIFICA 1: Ingrandimento riga 1 (75) per dare spazio al logo più alto
+        worksheet.row_dimensions[1].height = 75
         
         # Controllo flessibile del file logo
         logo_path = None
@@ -80,21 +81,19 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
                 from openpyxl.drawing.image import Image as OpenpyxlImage
                 img = OpenpyxlImage(logo_path)
                 img.width = 150  
-                img.height = 50  
+                img.height = 65  # MODIFICA 1: Logo reso più alto per riproporzionarlo
                 worksheet.add_image(img, 'A1')
             except:
                 pass
         
-        # 1. INTESTAZIONE VALSECCHI TRASPORTI
         worksheet.row_dimensions[2].height = 65 
         cell_azienda = worksheet['A2']
         cell_azienda.value = "VALSECCHI TRASPORTI S.R.L.\nVIA GIUSEPPE PARINI N. 8\nCESANA BRIANZA (LC)\nP.IVA 01932020132"
         cell_azienda.font = font_bold_calibri12
         cell_azienda.alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
         
-        # 2. FIX APPLICATO QUI: Suddivisione in blocchi (Nome, Via, CAP) e andata a capo interna in A4
+        testo_spettabile = info_anagrafica if info_anagrafica else cliente_nome
         if info_anagrafica:
-            # Splitta la stringa dove rileva 2 o più spazi consecutivi eliminando i vuoti
             parti_indirizzo = [p.strip() for p in re.split(r'\s{2,}', str(info_anagrafica)) if p.strip()]
             if parti_indirizzo:
                 parti_indirizzo[0] = f"SPETT.LE   {parti_indirizzo[0]}"
@@ -107,28 +106,33 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
         cell_spett = worksheet['A4']
         cell_spett.value = testo_finito
         cell_spett.font = font_bold_calibri12
-        # Abilita wrap_text=True per forzare l'andata a capo visiva nella stessa cella
         cell_spett.alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
-        worksheet.row_dimensions[4].height = 65 # Ingrandisce l'altezza della riga per mostrare i 3 elementi
+        worksheet.row_dimensions[4].height = 65 
         
-        # 3. RIFERIMENTO FATTURA
         cell_fatt = worksheet['A5']
         cell_fatt.value = "RIF. NS FATT. N. ........ DEL  ..../..../202.."
         cell_fatt.font = font_bold_standard
         cell_fatt.alignment = align_left
         worksheet.row_dimensions[5].height = 18
 
-    # Formattazione righe tabella (Altezza fissa 24.9)
+    # MODIFICA 2: Formattazione righe tabella (Altezza 24.9) + Allineamenti Condizionali Tassativi
     for row in worksheet.iter_rows(min_row=start_row_header):
         worksheet.row_dimensions[row[0].row].height = 24.9
         for cell in row:
             cell.font = font_bold_standard
             cell.border = thin_border
-            cell.alignment = align_center
+            
+            # Da colonna A a D (<=4) -> SINISTRA. Da colonna E a I (>4) -> DESTRA
+            if cell.column <= 4:
+                cell.alignment = align_left
+            else:
+                cell.alignment = align_right
 
+    # Applica sfondo azzurrino solo alla riga delle intestazioni (Riga 7)
     for cell in worksheet[start_row_header]:
         cell.fill = fill_azzurrino
 
+    # Formattazione Numeri Decimali e Date
     for col_idx in range(1, worksheet.max_column + 1):
         col_letter = get_column_letter(col_idx)
         header_val = str(worksheet.cell(row=start_row_header, column=col_idx).value).upper()
@@ -147,6 +151,7 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
             max_len = max(len(str(cell.value or '')) for cell in worksheet[col_letter] if cell.row >= start_row_header)
             worksheet.column_dimensions[col_letter].width = max(max_len + 4, 16)
 
+    # CALCOLO AUTOMATICO DEL TOTALE
     if is_casati:
         totale_col_idx = None
         for col_idx in range(1, worksheet.max_column + 1):
@@ -168,11 +173,15 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
             cell_sum.value = f"=SUM({col_letter}8:{col_letter}{last_data_row})"
             cell_sum.number_format = '#,##0.00'
             
+            # Disegna la griglia finale rispettando gli allineamenti (A-D SX, E-I DX)
             for col_idx in range(1, worksheet.max_column + 1):
                 c = worksheet.cell(row=total_row_idx, column=col_idx)
                 c.font = font_bold_standard
                 c.border = thin_border
-                c.alignment = align_center
+                if col_idx <= 4:
+                    c.alignment = align_left
+                else:
+                    c.alignment = align_right
 
 
 # --- INTERFACCIA WEB ---
@@ -203,7 +212,18 @@ if uploaded_file and st.button("🚀 GENERA DOCUMENTI FISCALI", type="primary"):
                     df_ana[col_target].astype(str).str.strip()
                 ))
 
-        df = pd.read_excel(uploaded_file) if uploaded_file.name.endswith('.xlsx') else pd.read_csv(uploaded_file)
+        # MODIFICA 3: Pre-ispezione e forzatura del tipo testo per impedire a Excel/Pandas di convertire i N. DDT in Date
+        if uploaded_file.name.endswith('.xlsx'):
+            hdr = pd.read_excel(uploaded_file, nrows=0).columns
+            uploaded_file.seek(0)
+            dtypes = {c: str for c in hdr if 'DDT' in c.upper() and 'DATA' not in c.upper()}
+            df = pd.read_excel(uploaded_file, dtype=dtypes)
+        else:
+            hdr = pd.read_csv(uploaded_file, nrows=0).columns
+            uploaded_file.seek(0)
+            dtypes = {c: str for c in hdr if 'DDT' in c.upper() and 'DATA' not in c.upper()}
+            df = pd.read_csv(uploaded_file, dtype=dtypes)
+            
         df.columns = df.columns.str.strip().str.upper()
         df = df.loc[:, ~df.columns.str.contains('^UNNAMED', na=False)]
 
@@ -254,7 +274,7 @@ if uploaded_file and st.button("🚀 GENERA DOCUMENTI FISCALI", type="primary"):
                         
                     zip_file.writestr(f"Autisti/Scarico_{safe_autista}_{mese_str}.xlsx", buf.getvalue())
 
-        st.success("✅ File elaborati! L'anagrafica in A4 ora va correttamente a capo riga per riga.")
+        st.success("✅ File elaborati con successo (Versione 8.1 applicata)!")
         st.download_button("📥 SCARICA ARCHIVIO COMPLETO", zip_buffer.getvalue(), f"Trasporti_Valsecchi_{mese_str}.zip", "application/zip")
 
     except Exception as e:
