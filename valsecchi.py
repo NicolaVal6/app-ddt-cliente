@@ -5,12 +5,13 @@ import zipfile
 import re
 import os
 import math
+import textwrap  # NUOVA LIBRERIA: Serve a simulare il testo a capo reale di Excel
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
 
 # --- CONFIGURAZIONE DI SISTEMA ---
-st.set_page_config(page_title="Trasporti App v8.4", layout="centered")
-st.caption("Versione Sistema: 8.4 (Fix Altezza Dinamica Righe a Capo)")
+st.set_page_config(page_title="Trasporti App v8.5", layout="centered")
+st.caption("Versione Sistema: 8.5 (Motore Intelligente Altezza Righe TextWrap)")
 
 PASSWORD_CLIENTE = "Trasporti2024!"
 
@@ -53,10 +54,8 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
 
     start_row_header = 7 if is_casati else 1
 
-    # Piè di pagina dinamico per numero pagina (Attivo in stampa/PDF)
     worksheet.oddFooter.center.text = "Pagina &P"
     
-    # Pre-impostazioni di stampa A4 orizzontale in background
     worksheet.page_setup.orientation = 'landscape' 
     worksheet.page_setup.paperSize = 9  
     worksheet.sheet_properties.pageSetUpPr.fitToPage = True
@@ -64,10 +63,9 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
     worksheet.page_setup.fitToHeight = False
 
     if is_casati:
-        worksheet.print_title_rows = '1:7' # Ripete l'intestazione in stampa
+        worksheet.print_title_rows = '1:7' 
         worksheet.row_dimensions[1].height = 80
         
-        # Controllo flessibile del file logo
         logo_path = None
         for filename in ["logo.png", "logo.jpg", "logo.jpeg", "LOGO.jpg", "LOGO.PNG"]:
             if os.path.exists(filename):
@@ -78,8 +76,8 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
             try:
                 from openpyxl.drawing.image import Image as OpenpyxlImage
                 img = OpenpyxlImage(logo_path)
-                img.width = 147  # 3.9 cm
-                img.height = 91  # 2.4 cm
+                img.width = 147  
+                img.height = 91  
                 worksheet.add_image(img, 'I1')
             except:
                 pass
@@ -113,7 +111,7 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
         cell_fatt.alignment = align_left_wrap
         worksheet.row_dimensions[5].height = 18
 
-    # Calcolo larghezze colonne (Limite a 25 caratteri per forzare l'andata a capo)
+    # Calcolo larghezze colonne con Limite a 25 caratteri
     for col_idx in range(1, worksheet.max_column + 1):
         col_letter = get_column_letter(col_idx)
         header_val = str(worksheet.cell(row=start_row_header, column=col_idx).value).upper()
@@ -133,7 +131,7 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
             else:
                 worksheet.column_dimensions[col_letter].width = max(max_len + 4, 16)
 
-    # Formattazione base griglia e allineamenti (A-D SX, E-I DX)
+    # Formattazione allineamenti base
     for row in worksheet.iter_rows(min_row=start_row_header):
         for cell in row:
             cell.font = font_bold_standard
@@ -143,7 +141,7 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
             else:
                 cell.alignment = align_right_wrap
 
-    # FIX ALTEZZA DINAMICA: Calcolo rigoroso per compensare l'andata a capo
+    # --- FIX 8.5: MOTORE DI SIMULAZIONE ALTEZZA (TextWrap) ---
     for row_idx in range(start_row_header, worksheet.max_row + 1):
         max_lines_in_row = 1
         for col_idx in range(1, worksheet.max_column + 1):
@@ -151,29 +149,34 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
             if cell.value is not None:
                 val_str = str(cell.value)
                 col_letter = get_column_letter(col_idx)
+                
+                # Ottiene la larghezza della colonna (se non c'è, assume 16)
                 w = worksheet.column_dimensions[col_letter].width or 16
                 
-                # Calcola le righe generate forzatamente dal limite di larghezza della colonna
-                wrapped_lines = math.ceil(len(val_str) / max(1, w - 2))
+                # Tolleranza di 2 caratteri per gestire il font proporzionale
+                safe_width = max(5, int(w) - 2)
                 
-                # Calcola anche eventuali "a capo" nativi presenti nel testo
-                explicit_newlines = val_str.count('\n') + 1
+                lines_for_this_cell = 0
+                # Analizza riga per riga gli "a capo" forzati e quelli naturali
+                for paragraph in val_str.split('\n'):
+                    wrapped = textwrap.wrap(paragraph, width=safe_width)
+                    lines_for_this_cell += len(wrapped) if wrapped else 1
                 
-                lines = max(explicit_newlines, wrapped_lines)
-                if lines > max_lines_in_row:
-                    max_lines_in_row = lines
+                if lines_for_this_cell > max_lines_in_row:
+                    max_lines_in_row = lines_for_this_cell
         
-        # Assegnazione altezza: Base 24.9 + 16 punti per ogni riga in più oltre la prima
+        # Base 24.9. Se ci sono più righe espande calcolando 16.5 punti a riga.
         if max_lines_in_row > 1:
-            worksheet.row_dimensions[row_idx].height = 24.9 + ((max_lines_in_row - 1) * 16)
+            worksheet.row_dimensions[row_idx].height = max(24.9, max_lines_in_row * 16.5)
         else:
             worksheet.row_dimensions[row_idx].height = 24.9
+    # ---------------------------------------------------------
 
-    # Sfondo azzurrino riga intestazioni
+    # Sfondo azzurrino
     for cell in worksheet[start_row_header]:
         cell.fill = fill_azzurrino
 
-    # Formattazione decimali e date
+    # Formattazione Decimali e Date
     for col_idx in range(1, worksheet.max_column + 1):
         col_letter = get_column_letter(col_idx)
         header_val = str(worksheet.cell(row=start_row_header, column=col_idx).value).upper()
@@ -186,7 +189,7 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
                 if any(x in header_val for x in ['DATA', 'DDT']) and not isinstance(cell.value, str):
                     cell.number_format = 'DD/MM/YYYY'
 
-    # Calcolo Automatico del Totale sbloccato sia per Clienti che per Autisti
+    # Totale automatico
     totale_col_idx = None
     for col_idx in range(1, worksheet.max_column + 1):
         if "TOTALE" in str(worksheet.cell(row=start_row_header, column=col_idx).value).upper():
@@ -203,7 +206,7 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
         cell_label.value = "TOTALE"
         
         col_letter = get_column_letter(totale_col_idx)
-        start_data_row = 8 if is_casati else 2 # Parte dalla riga 8 per i clienti, riga 2 per gli autisti
+        start_data_row = 8 if is_casati else 2 
         
         cell_sum = worksheet.cell(row=total_row_idx, column=totale_col_idx)
         cell_sum.value = f"=SUM({col_letter}{start_data_row}:{col_letter}{last_data_row})"
@@ -308,7 +311,7 @@ if uploaded_file and st.button("🚀 GENERA DOCUMENTI FISCALI", type="primary"):
                         
                     zip_file.writestr(f"Autisti/Scarico_{safe_autista}_{mese_str}.xlsx", buf.getvalue())
 
-        st.success("✅ File elaborati! L'altezza righe ora si adatta perfettamente.")
+        st.success("✅ File elaborati! Il motore TextWrap gestisce ora le altezze correttamente.")
         st.download_button("📥 SCARICA ARCHIVIO COMPLETO", zip_buffer.getvalue(), f"Trasporti_Valsecchi_{mese_str}.zip", "application/zip")
 
     except Exception as e:
