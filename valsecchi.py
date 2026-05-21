@@ -4,12 +4,13 @@ import io
 import zipfile
 import re
 import os
+import math
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
 
 # --- CONFIGURAZIONE DI SISTEMA ---
-st.set_page_config(page_title="Trasporti App v8.2", layout="centered")
-st.caption("Versione Sistema: 8.2 (Logo in cm esatti: 2.4 h x 3.9 l)")
+st.set_page_config(page_title="Trasporti App v8.3", layout="centered")
+st.caption("Versione Sistema: 8.3 (Logo a DX, Auto-Wrap Righe e Totale Autisti)")
 
 PASSWORD_CLIENTE = "Trasporti2024!"
 
@@ -40,9 +41,9 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
     font_bold_standard = Font(name='Calibri', size=11, bold=True, color="000000")
     font_bold_calibri12 = Font(name='Calibri', size=12, bold=True, color="000000")
     
-    # Definizione degli allineamenti richiesti
-    align_left = Alignment(horizontal="left", vertical="center")
-    align_right = Alignment(horizontal="right", vertical="center")
+    # MODIFICA 2: Attivazione del wrap_text (Testo a capo) su tutti gli allineamenti della tabella
+    align_left_wrap = Alignment(horizontal="left", vertical="center", wrap_text=True)
+    align_right_wrap = Alignment(horizontal="right", vertical="center", wrap_text=True)
     
     fill_azzurrino = PatternFill(start_color="B4C6E7", end_color="B4C6E7", fill_type="solid")
     
@@ -65,8 +66,6 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
 
     if is_casati:
         worksheet.print_title_rows = '1:7' # Ripete l'intestazione in stampa
-        
-        # Ingrandimento riga 1 a 80 per alloggiare comodamente i 2.4 cm (91px) di altezza del logo
         worksheet.row_dimensions[1].height = 80
         
         # Controllo flessibile del file logo
@@ -80,10 +79,10 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
             try:
                 from openpyxl.drawing.image import Image as OpenpyxlImage
                 img = OpenpyxlImage(logo_path)
-                # DIMENSIONI RICHIESTE: 3.9 cm x 2.4 cm convertiti in pixel standard
                 img.width = 147  # 3.9 cm
                 img.height = 91  # 2.4 cm
-                worksheet.add_image(img, 'A1')
+                # MODIFICA 1: Spostamento Logo sulla cella I1 (In alto a destra della tabella)
+                worksheet.add_image(img, 'I1')
             except:
                 pass
         
@@ -113,27 +112,64 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
         cell_fatt = worksheet['A5']
         cell_fatt.value = "RIF. NS FATT. N. ........ DEL  ..../..../202.."
         cell_fatt.font = font_bold_standard
-        cell_fatt.alignment = align_left
+        cell_fatt.alignment = align_left_wrap
         worksheet.row_dimensions[5].height = 18
 
-    # Formattazione righe tabella (Altezza 24.9) + Allineamenti Condizionali Tassativi
+    # MODIFICA 2: Calcolo delle larghezze delle colonne con un "tetto massimo" per forzare il testo a capo
+    for col_idx in range(1, worksheet.max_column + 1):
+        col_letter = get_column_letter(col_idx)
+        header_val = str(worksheet.cell(row=start_row_header, column=col_idx).value).upper()
+        
+        max_len = 0
+        for row_idx in range(start_row_header, worksheet.max_row + 1):
+            val = worksheet.cell(row=row_idx, column=col_idx).value
+            if val is not None:
+                max_len = max(max_len, len(str(val)))
+        
+        max_allowed_width = 25 # Limite orizzontale massimo per le colonne descrittive
+        if col_letter == 'A' and is_casati:
+            worksheet.column_dimensions[col_letter].width = 30.9
+        else:
+            if max_len > max_allowed_width and any(x in header_val for x in ['DITTA', 'LUOGO', 'DESTINAZIONE', 'VARIE']):
+                worksheet.column_dimensions[col_letter].width = max_allowed_width
+            else:
+                worksheet.column_dimensions[col_letter].width = max(max_len + 4, 16)
+
+    # Formattazione e applicazione allineamenti condizionali della tabella (A-D SX, E-I DX)
     for row in worksheet.iter_rows(min_row=start_row_header):
-        worksheet.row_dimensions[row[0].row].height = 24.9
         for cell in row:
             cell.font = font_bold_standard
             cell.border = thin_border
-            
-            # Da colonna A a D (<=4) -> SINISTRA. Da colonna E a I (>4) -> DESTRA
             if cell.column <= 4:
-                cell.alignment = align_left
+                cell.alignment = align_left_wrap
             else:
-                cell.alignment = align_right
+                cell.alignment = align_right_wrap
 
-    # Applica sfondo azzurrino solo alla riga delle intestazioni (Riga 7)
+    # MODIFICA 2: Analisi riga per riga per correggere dinamicamente l'altezza se il testo va a capo
+    for row_idx in range(start_row_header + 1, worksheet.max_row + 1):
+        max_lines_in_row = 1
+        for col_idx in range(1, worksheet.max_column + 1):
+            cell = worksheet.cell(row=row_idx, column=col_idx)
+            if cell.value is not None:
+                col_letter = get_column_letter(col_idx)
+                w = worksheet.column_dimensions[col_letter].width or 16
+                text_len = len(str(cell.value))
+                if text_len > (w - 2):
+                    lines = math.ceil(text_len / max(1, (w - 2)))
+                    if lines > max_lines_in_row:
+                        max_lines_in_row = lines
+        
+        # Se il testo si sviluppa su più linee, espande l'altezza in proporzione, altrimenti mantiene 24.9
+        if max_lines_in_row > 1:
+            worksheet.row_dimensions[row_idx].height = max_lines_in_row * 18
+        else:
+            worksheet.row_dimensions[row_idx].height = 24.9
+
+    # Applica sfondo azzurrino alla riga delle intestazioni
     for cell in worksheet[start_row_header]:
         cell.fill = fill_azzurrino
 
-    # Formattazione Numeri Decimali e Date
+    # Formattazione numeri decimali e formati date
     for col_idx in range(1, worksheet.max_column + 1):
         col_letter = get_column_letter(col_idx)
         header_val = str(worksheet.cell(row=start_row_header, column=col_idx).value).upper()
@@ -145,43 +181,38 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
                     cell.number_format = '#,##0.00'
                 if any(x in header_val for x in ['DATA', 'DDT']) and not isinstance(cell.value, str):
                     cell.number_format = 'DD/MM/YYYY'
-        
-        if col_letter == 'A' and is_casati:
-            worksheet.column_dimensions[col_letter].width = 30.9
-        else:
-            max_len = max(len(str(cell.value or '')) for cell in worksheet[col_letter] if cell.row >= start_row_header)
-            worksheet.column_dimensions[col_letter].width = max(max_len + 4, 16)
 
-    # CALCOLO AUTOMATICO DEL TOTALE
-    if is_casati:
-        totale_col_idx = None
-        for col_idx in range(1, worksheet.max_column + 1):
-            if "TOTALE" in str(worksheet.cell(row=start_row_header, column=col_idx).value).upper():
-                totale_col_idx = col_idx
-                break
+    # MODIFICA 3: Calcolo Automatico del Totale sbloccato sia per Clienti che per Autisti
+    totale_col_idx = None
+    for col_idx in range(1, worksheet.max_column + 1):
+        if "TOTALE" in str(worksheet.cell(row=start_row_header, column=col_idx).value).upper():
+            totale_col_idx = col_idx
+            break
+    
+    if totale_col_idx:
+        last_data_row = worksheet.max_row
+        total_row_idx = last_data_row + 1
         
-        if totale_col_idx:
-            last_data_row = worksheet.max_row
-            total_row_idx = last_data_row + 1
-            
-            worksheet.row_dimensions[total_row_idx].height = 24.9
-            
-            cell_label = worksheet.cell(row=total_row_idx, column=1)
-            cell_label.value = "TOTALE"
-            
-            col_letter = get_column_letter(totale_col_idx)
-            cell_sum = worksheet.cell(row=total_row_idx, column=totale_col_idx)
-            cell_sum.value = f"=SUM({col_letter}8:{col_letter}{last_data_row})"
-            cell_sum.number_format = '#,##0.00'
-            
-            for col_idx in range(1, worksheet.max_column + 1):
-                c = worksheet.cell(row=total_row_idx, column=col_idx)
-                c.font = font_bold_standard
-                c.border = thin_border
-                if col_idx <= 4:
-                    c.alignment = align_left
-                else:
-                    c.alignment = align_right
+        worksheet.row_dimensions[total_row_idx].height = 24.9
+        
+        cell_label = worksheet.cell(row=total_row_idx, column=1)
+        cell_label.value = "TOTALE"
+        
+        col_letter = get_column_letter(totale_col_idx)
+        start_data_row = 8 if is_casati else 2 # Parte dalla riga 8 per i clienti, riga 2 per gli autisti
+        
+        cell_sum = worksheet.cell(row=total_row_idx, column=totale_col_idx)
+        cell_sum.value = f"=SUM({col_letter}{start_data_row}:{col_letter}{last_data_row})"
+        cell_sum.number_format = '#,##0.00'
+        
+        for col_idx in range(1, worksheet.max_column + 1):
+            c = worksheet.cell(row=total_row_idx, column=col_idx)
+            c.font = font_bold_standard
+            c.border = thin_border
+            if col_idx <= 4:
+                c.alignment = align_left_wrap
+            else:
+                c.alignment = align_right_wrap
 
 
 # --- INTERFACCIA WEB ---
@@ -273,7 +304,7 @@ if uploaded_file and st.button("🚀 GENERA DOCUMENTI FISCALI", type="primary"):
                         
                     zip_file.writestr(f"Autisti/Scarico_{safe_autista}_{mese_str}.xlsx", buf.getvalue())
 
-        st.success("✅ File elaborati con successo (Versione 8.2 applicata)!")
+        st.success("✅ File elaborati con successo (Versione 8.3 applicata)!")
         st.download_button("📥 SCARICA ARCHIVIO COMPLETO", zip_buffer.getvalue(), f"Trasporti_Valsecchi_{mese_str}.zip", "application/zip")
 
     except Exception as e:
