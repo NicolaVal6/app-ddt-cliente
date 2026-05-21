@@ -9,8 +9,8 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
 
 # --- CONFIGURAZIONE DI SISTEMA ---
-st.set_page_config(page_title="Trasporti App v8.3", layout="centered")
-st.caption("Versione Sistema: 8.3 (Logo a DX, Auto-Wrap Righe e Totale Autisti)")
+st.set_page_config(page_title="Trasporti App v8.4", layout="centered")
+st.caption("Versione Sistema: 8.4 (Fix Altezza Dinamica Righe a Capo)")
 
 PASSWORD_CLIENTE = "Trasporti2024!"
 
@@ -41,7 +41,6 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
     font_bold_standard = Font(name='Calibri', size=11, bold=True, color="000000")
     font_bold_calibri12 = Font(name='Calibri', size=12, bold=True, color="000000")
     
-    # MODIFICA 2: Attivazione del wrap_text (Testo a capo) su tutti gli allineamenti della tabella
     align_left_wrap = Alignment(horizontal="left", vertical="center", wrap_text=True)
     align_right_wrap = Alignment(horizontal="right", vertical="center", wrap_text=True)
     
@@ -81,7 +80,6 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
                 img = OpenpyxlImage(logo_path)
                 img.width = 147  # 3.9 cm
                 img.height = 91  # 2.4 cm
-                # MODIFICA 1: Spostamento Logo sulla cella I1 (In alto a destra della tabella)
                 worksheet.add_image(img, 'I1')
             except:
                 pass
@@ -115,7 +113,7 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
         cell_fatt.alignment = align_left_wrap
         worksheet.row_dimensions[5].height = 18
 
-    # MODIFICA 2: Calcolo delle larghezze delle colonne con un "tetto massimo" per forzare il testo a capo
+    # Calcolo larghezze colonne (Limite a 25 caratteri per forzare l'andata a capo)
     for col_idx in range(1, worksheet.max_column + 1):
         col_letter = get_column_letter(col_idx)
         header_val = str(worksheet.cell(row=start_row_header, column=col_idx).value).upper()
@@ -126,7 +124,7 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
             if val is not None:
                 max_len = max(max_len, len(str(val)))
         
-        max_allowed_width = 25 # Limite orizzontale massimo per le colonne descrittive
+        max_allowed_width = 25 
         if col_letter == 'A' and is_casati:
             worksheet.column_dimensions[col_letter].width = 30.9
         else:
@@ -135,7 +133,7 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
             else:
                 worksheet.column_dimensions[col_letter].width = max(max_len + 4, 16)
 
-    # Formattazione e applicazione allineamenti condizionali della tabella (A-D SX, E-I DX)
+    # Formattazione base griglia e allineamenti (A-D SX, E-I DX)
     for row in worksheet.iter_rows(min_row=start_row_header):
         for cell in row:
             cell.font = font_bold_standard
@@ -145,31 +143,37 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
             else:
                 cell.alignment = align_right_wrap
 
-    # MODIFICA 2: Analisi riga per riga per correggere dinamicamente l'altezza se il testo va a capo
-    for row_idx in range(start_row_header + 1, worksheet.max_row + 1):
+    # FIX ALTEZZA DINAMICA: Calcolo rigoroso per compensare l'andata a capo
+    for row_idx in range(start_row_header, worksheet.max_row + 1):
         max_lines_in_row = 1
         for col_idx in range(1, worksheet.max_column + 1):
             cell = worksheet.cell(row=row_idx, column=col_idx)
             if cell.value is not None:
+                val_str = str(cell.value)
                 col_letter = get_column_letter(col_idx)
                 w = worksheet.column_dimensions[col_letter].width or 16
-                text_len = len(str(cell.value))
-                if text_len > (w - 2):
-                    lines = math.ceil(text_len / max(1, (w - 2)))
-                    if lines > max_lines_in_row:
-                        max_lines_in_row = lines
+                
+                # Calcola le righe generate forzatamente dal limite di larghezza della colonna
+                wrapped_lines = math.ceil(len(val_str) / max(1, w - 2))
+                
+                # Calcola anche eventuali "a capo" nativi presenti nel testo
+                explicit_newlines = val_str.count('\n') + 1
+                
+                lines = max(explicit_newlines, wrapped_lines)
+                if lines > max_lines_in_row:
+                    max_lines_in_row = lines
         
-        # Se il testo si sviluppa su più linee, espande l'altezza in proporzione, altrimenti mantiene 24.9
+        # Assegnazione altezza: Base 24.9 + 16 punti per ogni riga in più oltre la prima
         if max_lines_in_row > 1:
-            worksheet.row_dimensions[row_idx].height = max_lines_in_row * 18
+            worksheet.row_dimensions[row_idx].height = 24.9 + ((max_lines_in_row - 1) * 16)
         else:
             worksheet.row_dimensions[row_idx].height = 24.9
 
-    # Applica sfondo azzurrino alla riga delle intestazioni
+    # Sfondo azzurrino riga intestazioni
     for cell in worksheet[start_row_header]:
         cell.fill = fill_azzurrino
 
-    # Formattazione numeri decimali e formati date
+    # Formattazione decimali e date
     for col_idx in range(1, worksheet.max_column + 1):
         col_letter = get_column_letter(col_idx)
         header_val = str(worksheet.cell(row=start_row_header, column=col_idx).value).upper()
@@ -182,7 +186,7 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
                 if any(x in header_val for x in ['DATA', 'DDT']) and not isinstance(cell.value, str):
                     cell.number_format = 'DD/MM/YYYY'
 
-    # MODIFICA 3: Calcolo Automatico del Totale sbloccato sia per Clienti che per Autisti
+    # Calcolo Automatico del Totale sbloccato sia per Clienti che per Autisti
     totale_col_idx = None
     for col_idx in range(1, worksheet.max_column + 1):
         if "TOTALE" in str(worksheet.cell(row=start_row_header, column=col_idx).value).upper():
@@ -304,7 +308,7 @@ if uploaded_file and st.button("🚀 GENERA DOCUMENTI FISCALI", type="primary"):
                         
                     zip_file.writestr(f"Autisti/Scarico_{safe_autista}_{mese_str}.xlsx", buf.getvalue())
 
-        st.success("✅ File elaborati con successo (Versione 8.3 applicata)!")
+        st.success("✅ File elaborati! L'altezza righe ora si adatta perfettamente.")
         st.download_button("📥 SCARICA ARCHIVIO COMPLETO", zip_buffer.getvalue(), f"Trasporti_Valsecchi_{mese_str}.zip", "application/zip")
 
     except Exception as e:
