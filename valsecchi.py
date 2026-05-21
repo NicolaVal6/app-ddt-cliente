@@ -5,13 +5,13 @@ import zipfile
 import re
 import os
 import math
-import textwrap  # NUOVA LIBRERIA: Serve a simulare il testo a capo reale di Excel
+import textwrap
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
 
 # --- CONFIGURAZIONE DI SISTEMA ---
-st.set_page_config(page_title="Trasporti App v8.5", layout="centered")
-st.caption("Versione Sistema: 8.5 (Motore Intelligente Altezza Righe TextWrap)")
+st.set_page_config(page_title="Trasporti App v8.6", layout="centered")
+st.caption("Versione Sistema: 8.6 (Fix Altezza Riga Fattura e Intestazioni)")
 
 PASSWORD_CLIENTE = "Trasporti2024!"
 
@@ -109,6 +109,7 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
         cell_fatt.value = "RIF. NS FATT. N. ........ DEL  ..../..../202.."
         cell_fatt.font = font_bold_standard
         cell_fatt.alignment = align_left_wrap
+        # L'altezza della riga 5 viene ora calcolata dinamicamente nel blocco sottostante
         worksheet.row_dimensions[5].height = 18
 
     # Calcolo larghezze colonne con Limite a 25 caratteri
@@ -141,23 +142,22 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
             else:
                 cell.alignment = align_right_wrap
 
-    # --- FIX 8.5: MOTORE DI SIMULAZIONE ALTEZZA (TextWrap) ---
-    for row_idx in range(start_row_header, worksheet.max_row + 1):
-        max_lines_in_row = 1
+    # --- FIX 8.6: MOTORE DI SIMULAZIONE ALTEZZA (Esteso da riga 4 in giù) ---
+    start_dynamic_row = 4 if is_casati else 1
+    for row_idx in range(start_dynamic_row, worksheet.max_row + 1):
+        max_lines_in_row = 0
+        has_text = False
         for col_idx in range(1, worksheet.max_column + 1):
             cell = worksheet.cell(row=row_idx, column=col_idx)
             if cell.value is not None:
+                has_text = True
                 val_str = str(cell.value)
                 col_letter = get_column_letter(col_idx)
                 
-                # Ottiene la larghezza della colonna (se non c'è, assume 16)
                 w = worksheet.column_dimensions[col_letter].width or 16
-                
-                # Tolleranza di 2 caratteri per gestire il font proporzionale
                 safe_width = max(5, int(w) - 2)
                 
                 lines_for_this_cell = 0
-                # Analizza riga per riga gli "a capo" forzati e quelli naturali
                 for paragraph in val_str.split('\n'):
                     wrapped = textwrap.wrap(paragraph, width=safe_width)
                     lines_for_this_cell += len(wrapped) if wrapped else 1
@@ -165,11 +165,16 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
                 if lines_for_this_cell > max_lines_in_row:
                     max_lines_in_row = lines_for_this_cell
         
-        # Base 24.9. Se ci sono più righe espande calcolando 16.5 punti a riga.
-        if max_lines_in_row > 1:
-            worksheet.row_dimensions[row_idx].height = max(24.9, max_lines_in_row * 16.5)
-        else:
-            worksheet.row_dimensions[row_idx].height = 24.9
+        if has_text:
+            if row_idx == 4 and is_casati:
+                # Protegge la riga 4 Spettabile mantenendo almeno 65 di altezza
+                worksheet.row_dimensions[row_idx].height = max(65, max_lines_in_row * 16.5)
+            elif row_idx < start_row_header:
+                # Applica il calcolo alla riga 5 della fattura
+                worksheet.row_dimensions[row_idx].height = max(18, max_lines_in_row * 16.5)
+            else:
+                # Applica il calcolo a tutta la tabella sottostante
+                worksheet.row_dimensions[row_idx].height = max(24.9, max_lines_in_row * 16.5)
     # ---------------------------------------------------------
 
     # Sfondo azzurrino
@@ -187,132 +192,3 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
                 if any(x in header_val for x in ['TARIFFA', 'TOTALE']):
                     cell.number_format = '#,##0.00'
                 if any(x in header_val for x in ['DATA', 'DDT']) and not isinstance(cell.value, str):
-                    cell.number_format = 'DD/MM/YYYY'
-
-    # Totale automatico
-    totale_col_idx = None
-    for col_idx in range(1, worksheet.max_column + 1):
-        if "TOTALE" in str(worksheet.cell(row=start_row_header, column=col_idx).value).upper():
-            totale_col_idx = col_idx
-            break
-    
-    if totale_col_idx:
-        last_data_row = worksheet.max_row
-        total_row_idx = last_data_row + 1
-        
-        worksheet.row_dimensions[total_row_idx].height = 24.9
-        
-        cell_label = worksheet.cell(row=total_row_idx, column=1)
-        cell_label.value = "TOTALE"
-        
-        col_letter = get_column_letter(totale_col_idx)
-        start_data_row = 8 if is_casati else 2 
-        
-        cell_sum = worksheet.cell(row=total_row_idx, column=totale_col_idx)
-        cell_sum.value = f"=SUM({col_letter}{start_data_row}:{col_letter}{last_data_row})"
-        cell_sum.number_format = '#,##0.00'
-        
-        for col_idx in range(1, worksheet.max_column + 1):
-            c = worksheet.cell(row=total_row_idx, column=col_idx)
-            c.font = font_bold_standard
-            c.border = thin_border
-            if col_idx <= 4:
-                c.alignment = align_left_wrap
-            else:
-                c.alignment = align_right_wrap
-
-
-# --- INTERFACCIA WEB ---
-try: st.image("logo.png" if os.path.exists("logo.png") else "LOGO.jpg", width=250)
-except: pass
-
-st.title("🚛 Sistema Gestionale Valsecchi Trasporti")
-
-uploaded_file = st.file_uploader("1. Carica Estrazione Gestionale (.xlsx o .csv)", type=["xlsx", "csv"])
-uploaded_anagrafica = st.file_uploader("2. Carica Anagrafiche Clienti (Opzionale)", type=["xlsx", "csv"])
-
-if uploaded_file and st.button("🚀 GENERA DOCUMENTI FISCALI", type="primary"):
-    try:
-        anagrafiche = {}
-        if uploaded_anagrafica:
-            df_ana = pd.read_excel(uploaded_anagrafica) if uploaded_anagrafica.name.endswith('.xlsx') else pd.read_csv(uploaded_anagrafica)
-            df_ana.columns = df_ana.columns.str.strip().str.upper()
-            
-            col_target = None
-            for c in df_ana.columns:
-                if 'INTESTAZIONE' in c:
-                    col_target = c
-                    break
-            
-            if 'CLIENTE' in df_ana.columns and col_target:
-                anagrafiche = dict(zip(
-                    df_ana['CLIENTE'].astype(str).str.upper().str.strip(), 
-                    df_ana[col_target].astype(str).str.strip()
-                ))
-
-        if uploaded_file.name.endswith('.xlsx'):
-            hdr = pd.read_excel(uploaded_file, nrows=0).columns
-            uploaded_file.seek(0)
-            dtypes = {c: str for c in hdr if 'DDT' in c.upper() and 'DATA' not in c.upper()}
-            df = pd.read_excel(uploaded_file, dtype=dtypes)
-        else:
-            hdr = pd.read_csv(uploaded_file, nrows=0).columns
-            uploaded_file.seek(0)
-            dtypes = {c: str for c in hdr if 'DDT' in c.upper() and 'DATA' not in c.upper()}
-            df = pd.read_csv(uploaded_file, dtype=dtypes)
-            
-        df.columns = df.columns.str.strip().str.upper()
-        df = df.loc[:, ~df.columns.str.contains('^UNNAMED', na=False)]
-
-        mappa = {
-            'DITTA PRESA': 'DITTA PRESA', 'DITTA DI CARICO': 'DITTA PRESA',
-            'LUOGO PRESA': 'LUOGO PRESA', 'LUOGO DI CARICO': 'LUOGO PRESA',
-            'DESTINAZIONE FINALE': 'DESTINAZIONE FINALE', 'DESTINAZIONE': 'DESTINAZIONE FINALE',
-            'TIPO MERCE': 'VARIE', 'VARIE': 'VARIE',
-            'QUANTITA': "QUANTITA'", 'PESO': "QUANTITA'",
-            'DDT': 'N. DDT', 'N. DDT': 'N. DDT',
-            'TARIFFA': 'TARIFFA', 'TOTALE': 'TOTALE', 'DATA DDT': 'DATA DDT'
-        }
-        df_mapped = df.rename(columns=mappa)
-        
-        if 'DATA DDT' in df_mapped.columns:
-            df_mapped['DATA DDT'] = pd.to_datetime(df_mapped['DATA DDT'], errors='coerce').dt.date
-
-        cols_ordinate = ['DITTA PRESA', 'LUOGO PRESA', 'DESTINAZIONE FINALE', 'VARIE', "QUANTITA'", 'TARIFFA', 'TOTALE', 'N. DDT', 'DATA DDT']
-        cols_presenti = [c for c in cols_ordinate if c in df_mapped.columns]
-
-        first_valid = df_mapped['DATA DDT'].dropna() if 'DATA DDT' in df_mapped.columns else pd.Series()
-        mese_str = first_valid.iloc[0].strftime("%Y-%m") if not first_valid.empty else "MESE_IGNOTO"
-
-        zip_buffer = io.BytesIO()
-        with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
-            
-            for cliente, group in df_mapped.groupby('CLIENTE'):
-                safe_cliente = re.sub(r'[\\/*?:"<>|]', "", str(cliente)).strip()
-                buf = io.BytesIO()
-                
-                with pd.ExcelWriter(buf, engine='openpyxl') as writer:
-                    data_export = group[cols_presenti]
-                    data_export.to_excel(writer, index=False, sheet_name='Prospetto_DDT', startrow=6)
-                    
-                    info = anagrafiche.get(str(cliente).upper().strip(), "")
-                    formatta_excel_valsecchi(writer, 'Prospetto_DDT', is_casati=True, cliente_nome=str(cliente), info_anagrafica=info)
-                
-                zip_file.writestr(f"Clienti/{safe_cliente}_{mese_str}.xlsx", buf.getvalue())
-
-            if 'AUTISTA ALLO SCARICO' in df.columns:
-                for autista, group in df.groupby('AUTISTA ALLO SCARICO'):
-                    safe_autista = re.sub(r'[\\/*?:"<>|]', "", str(autista)).strip()
-                    buf = io.BytesIO()
-                    
-                    with pd.ExcelWriter(buf, engine='openpyxl') as writer:
-                        group.to_excel(writer, index=False, sheet_name='Prospetto_Autista')
-                        formatta_excel_valsecchi(writer, 'Prospetto_Autista', is_casati=False)
-                        
-                    zip_file.writestr(f"Autisti/Scarico_{safe_autista}_{mese_str}.xlsx", buf.getvalue())
-
-        st.success("✅ File elaborati! Il motore TextWrap gestisce ora le altezze correttamente.")
-        st.download_button("📥 SCARICA ARCHIVIO COMPLETO", zip_buffer.getvalue(), f"Trasporti_Valsecchi_{mese_str}.zip", "application/zip")
-
-    except Exception as e:
-        st.error(f"Errore: {e}")
