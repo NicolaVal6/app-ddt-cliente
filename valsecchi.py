@@ -10,8 +10,8 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
 
 # --- CONFIGURAZIONE DI SISTEMA ---
-st.set_page_config(page_title="Trasporti App v8.6", layout="centered")
-st.caption("Versione Sistema: 8.6 (Fix Altezza Riga Fattura e Intestazioni)")
+st.set_page_config(page_title="Trasporti App v8.9", layout="centered")
+st.caption("Versione Sistema: 8.9 (Doppio Foglio Excel per Dati Extra e Viaggi)")
 
 PASSWORD_CLIENTE = "Trasporti2024!"
 
@@ -35,7 +35,7 @@ if not check_password():
 
 
 # --- MOTORE DI FORMATTAZIONE AVANZATO EXCEL ---
-def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="", info_anagrafica=""):
+def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="", info_anagrafica="", tipo_foglio="viaggi"):
     workbook = writer.book
     worksheet = writer.sheets[sheet_name]
     
@@ -54,16 +54,31 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
 
     start_row_header = 7 if is_casati else 1
 
-    worksheet.oddFooter.center.text = "Pagina &P"
-    
+    # Pre-impostazioni di stampa A4 orizzontale in background
     worksheet.page_setup.orientation = 'landscape' 
     worksheet.page_setup.paperSize = 9  
     worksheet.sheet_properties.pageSetUpPr.fitToPage = True
     worksheet.page_setup.fitToWidth = 1
     worksheet.page_setup.fitToHeight = False
 
+    # Configurazione Margini di Sicurezza Piè di Pagina
+    worksheet.oddFooter.center.text = "Pagina &P"
+    worksheet.page_margins.left = 0.3
+    worksheet.page_margins.right = 0.3
+    worksheet.page_margins.top = 0.5
+    worksheet.page_margins.bottom = 0.9  
+    worksheet.page_margins.footer = 0.4  
+
     if is_casati:
-        worksheet.print_title_rows = '1:7' 
+        # =========================================================================
+        # 📑 BI-REGOLAMENTO DI RIPETIZIONE RIGHE (v8.9)
+        # =========================================================================
+        if tipo_foglio == "viaggi":
+            worksheet.print_title_rows = '1:7' # Ripete anche i titoli colonne dei viaggi
+        else:
+            worksheet.print_title_rows = '1:6' # Nel foglio extra esclude la riga 7 (Nessun testo fantasma)
+        # =========================================================================
+        
         worksheet.row_dimensions[1].height = 80
         
         logo_path = None
@@ -109,30 +124,34 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
         cell_fatt.value = "RIF. NS FATT. N. ........ DEL  ..../..../202.."
         cell_fatt.font = font_bold_standard
         cell_fatt.alignment = align_left_wrap
-        # L'altezza della riga 5 viene ora calcolata dinamicamente nel blocco sottostante
         worksheet.row_dimensions[5].height = 18
 
-    # Calcolo larghezze colonne con Limite a 25 caratteri
-    for col_idx in range(1, worksheet.max_column + 1):
-        col_letter = get_column_letter(col_idx)
-        header_val = str(worksheet.cell(row=start_row_header, column=col_idx).value).upper()
-        
-        max_len = 0
-        for row_idx in range(start_row_header, worksheet.max_row + 1):
-            val = worksheet.cell(row=row_idx, column=col_idx).value
-            if val is not None:
-                max_len = max(max_len, len(str(val)))
-        
-        max_allowed_width = 25 
-        if col_letter == 'A' and is_casati:
-            worksheet.column_dimensions[col_letter].width = 30.9
-        else:
-            if max_len > max_allowed_width and any(x in header_val for x in ['DITTA', 'LUOGO', 'DESTINAZIONE', 'VARIE']):
-                worksheet.column_dimensions[col_letter].width = max_allowed_width
+    # Gestione geometrica larghezze colonne differenziata per foglio
+    if tipo_foglio == "extra":
+        worksheet.column_dimensions['A'].width = 30.9
+        for col_idx in range(2, 10):
+            worksheet.column_dimensions[get_column_letter(col_idx)].width = 16
+    else:
+        for col_idx in range(1, worksheet.max_column + 1):
+            col_letter = get_column_letter(col_idx)
+            header_val = str(worksheet.cell(row=start_row_header, column=col_idx).value).upper()
+            
+            max_len = 0
+            for row_idx in range(start_row_header, worksheet.max_row + 1):
+                val = worksheet.cell(row=row_idx, column=col_idx).value
+                if val is not None:
+                    max_len = max(max_len, len(str(val)))
+            
+            max_allowed_width = 25 
+            if col_letter == 'A' and is_casati:
+                worksheet.column_dimensions[col_letter].width = 30.9
             else:
-                worksheet.column_dimensions[col_letter].width = max(max_len + 4, 16)
+                if max_len > max_allowed_width and any(x in header_val for x in ['DITTA', 'LUOGO', 'DESTINAZIONE', 'VARIE']):
+                    worksheet.column_dimensions[col_letter].width = max_allowed_width
+                else:
+                    worksheet.column_dimensions[col_letter].width = max(max_len + 4, 16)
 
-    # Formattazione allineamenti base
+    # Formattazione allineamenti base della griglia (attiva solo se ci sono dati)
     for row in worksheet.iter_rows(min_row=start_row_header):
         for cell in row:
             cell.font = font_bold_standard
@@ -142,7 +161,7 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
             else:
                 cell.alignment = align_right_wrap
 
-    # --- FIX 8.6: MOTORE DI SIMULAZIONE ALTEZZA (Esteso da riga 4 in giù) ---
+    # Motore di simulazione altezze righe (TextWrap)
     start_dynamic_row = 4 if is_casati else 1
     for row_idx in range(start_dynamic_row, worksheet.max_row + 1):
         max_lines_in_row = 0
@@ -167,64 +186,61 @@ def formatta_excel_valsecchi(writer, sheet_name, is_casati=False, cliente_nome="
         
         if has_text:
             if row_idx == 4 and is_casati:
-                # Protegge la riga 4 Spettabile mantenendo almeno 65 di altezza
                 worksheet.row_dimensions[row_idx].height = max(65, max_lines_in_row * 16.5)
             elif row_idx < start_row_header:
-                # Applica il calcolo alla riga 5 della fattura
                 worksheet.row_dimensions[row_idx].height = max(18, max_lines_in_row * 16.5)
             else:
-                # Applica il calcolo a tutta la tabella sottostante
                 worksheet.row_dimensions[row_idx].height = max(24.9, max_lines_in_row * 16.5)
-    # ---------------------------------------------------------
 
-    # Sfondo azzurrino
-    for cell in worksheet[start_row_header]:
-        cell.fill = fill_azzurrino
+    # Blocchi di formattazione specifici per i fogli contenenti tabelle reali
+    if tipo_foglio != "extra":
+        # Sfondo azzurrino riga intestazione
+        for cell in worksheet[start_row_header]:
+            cell.fill = fill_azzurrino
 
-    # Formattazione Decimali e Date
-    for col_idx in range(1, worksheet.max_column + 1):
-        col_letter = get_column_letter(col_idx)
-        header_val = str(worksheet.cell(row=start_row_header, column=col_idx).value).upper()
-        
-        for row_idx in range(start_row_header + 1, worksheet.max_row + 1):
-            cell = worksheet.cell(row=row_idx, column=col_idx)
-            if cell.value is not None:
-                if any(x in header_val for x in ['TARIFFA', 'TOTALE']):
-                    cell.number_format = '#,##0.00'
-                if any(x in header_val for x in ['DATA', 'DDT']) and not isinstance(cell.value, str):
-                    cell.number_format = 'DD/MM/YYYY'
-
-    # Totale automatico
-    totale_col_idx = None
-    for col_idx in range(1, worksheet.max_column + 1):
-        if "TOTALE" in str(worksheet.cell(row=start_row_header, column=col_idx).value).upper():
-            totale_col_idx = col_idx
-            break
-    
-    if totale_col_idx:
-        last_data_row = worksheet.max_row
-        total_row_idx = last_data_row + 1
-        
-        worksheet.row_dimensions[total_row_idx].height = 24.9
-        
-        cell_label = worksheet.cell(row=total_row_idx, column=1)
-        cell_label.value = "TOTALE"
-        
-        col_letter = get_column_letter(totale_col_idx)
-        start_data_row = 8 if is_casati else 2 
-        
-        cell_sum = worksheet.cell(row=total_row_idx, column=totale_col_idx)
-        cell_sum.value = f"=SUM({col_letter}{start_data_row}:{col_letter}{last_data_row})"
-        cell_sum.number_format = '#,##0.00'
-        
+        # Formattazione Decimali e Date
         for col_idx in range(1, worksheet.max_column + 1):
-            c = worksheet.cell(row=total_row_idx, column=col_idx)
-            c.font = font_bold_standard
-            c.border = thin_border
-            if col_idx <= 4:
-                c.alignment = align_left_wrap
-            else:
-                c.alignment = align_right_wrap
+            col_letter = get_column_letter(col_idx)
+            header_val = str(worksheet.cell(row=start_row_header, column=col_idx).value).upper()
+            
+            for row_idx in range(start_row_header + 1, worksheet.max_row + 1):
+                cell = worksheet.cell(row=row_idx, column=col_idx)
+                if cell.value is not None:
+                    if any(x in header_val for x in ['TARIFFA', 'TOTALE']):
+                        cell.number_format = '#,##0.00'
+                    if any(x in header_val for x in ['DATA', 'DDT']) and not isinstance(cell.value, str):
+                        cell.number_format = 'DD/MM/YYYY'
+
+        # Calcolo Totale Automatico
+        totale_col_idx = None
+        for col_idx in range(1, worksheet.max_column + 1):
+            if "TOTALE" in str(worksheet.cell(row=start_row_header, column=col_idx).value).upper():
+                totale_col_idx = col_idx
+                break
+        
+        if totale_col_idx:
+            last_data_row = worksheet.max_row
+            total_row_idx = last_data_row + 1
+            
+            worksheet.row_dimensions[total_row_idx].height = 24.9
+            cell_label = worksheet.cell(row=total_row_idx, column=1)
+            cell_label.value = "TOTALE"
+            
+            col_letter = get_column_letter(totale_col_idx)
+            start_data_row = 8 if is_casati else 2 
+            
+            cell_sum = worksheet.cell(row=total_row_idx, column=totale_col_idx)
+            cell_sum.value = f"=SUM({col_letter}{start_data_row}:{col_letter}{last_data_row})"
+            cell_sum.number_format = '#,##0.00'
+            
+            for col_idx in range(1, worksheet.max_column + 1):
+                c = worksheet.cell(row=total_row_idx, column=col_idx)
+                c.font = font_bold_standard
+                c.border = thin_border
+                if col_idx <= 4:
+                    c.alignment = align_left_wrap
+                else:
+                    c.alignment = align_right_wrap
 
 
 # --- INTERFACCIA WEB ---
@@ -292,19 +308,27 @@ if uploaded_file and st.button("🚀 GENERA DOCUMENTI FISCALI", type="primary"):
         zip_buffer = io.BytesIO()
         with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
             
+            # --- 1. FILE CLIENTI ---
             for cliente, group in df_mapped.groupby('CLIENTE'):
                 safe_cliente = re.sub(r'[\\/*?:"<>|]', "", str(cliente)).strip()
                 buf = io.BytesIO()
                 
                 with pd.ExcelWriter(buf, engine='openpyxl') as writer:
                     data_export = group[cols_presenti]
+                    # FOGLIO 1: Report Viaggi standard
                     data_export.to_excel(writer, index=False, sheet_name='Prospetto_DDT', startrow=6)
-                    
                     info = anagrafiche.get(str(cliente).upper().strip(), "")
-                    formatta_excel_valsecchi(writer, 'Prospetto_DDT', is_casati=True, cliente_nome=str(cliente), info_anagrafica=info)
+                    formatta_excel_valsecchi(writer, 'Prospetto_DDT', is_casati=True, cliente_nome=str(cliente), info_anagrafica=info, tipo_foglio="viaggi")
+                    
+                    # FOGLIO 2: Generazione automatica Tab Extra Vuoto (con solo intestazione)
+                    workbook = writer.book
+                    worksheet_extra = workbook.create_sheet(title='Dati_Extra')
+                    writer.sheets['Dati_Extra'] = worksheet_extra
+                    formatta_excel_valsecchi(writer, 'Dati_Extra', is_casati=True, cliente_nome=str(cliente), info_anagrafica=info, tipo_foglio="extra")
                 
                 zip_file.writestr(f"Clienti/{safe_cliente}_{mese_str}.xlsx", buf.getvalue())
 
+            # --- 2. FILE AUTISTI ---
             if 'AUTISTA ALLO SCARICO' in df.columns:
                 for autista, group in df.groupby('AUTISTA ALLO SCARICO'):
                     safe_autista = re.sub(r'[\\/*?:"<>|]', "", str(autista)).strip()
@@ -312,11 +336,11 @@ if uploaded_file and st.button("🚀 GENERA DOCUMENTI FISCALI", type="primary"):
                     
                     with pd.ExcelWriter(buf, engine='openpyxl') as writer:
                         group.to_excel(writer, index=False, sheet_name='Prospetto_Autista')
-                        formatta_excel_valsecchi(writer, 'Prospetto_Autista', is_casati=False)
+                        formatta_excel_valsecchi(writer, 'Prospetto_Autista', is_casati=False, tipo_foglio="viaggi")
                         
                     zip_file.writestr(f"Autisti/Scarico_{safe_autista}_{mese_str}.xlsx", buf.getvalue())
 
-        st.success("✅ File elaborati! Il ricalcolo altezza riga si applica ora anche all'intestazione fattura.")
+        st.success("✅ File bi-foglio strutturati con successo! Pronto per l'esportazione PDF unificata.")
         st.download_button("📥 SCARICA ARCHIVIO COMPLETO", zip_buffer.getvalue(), f"Trasporti_Valsecchi_{mese_str}.zip", "application/zip")
 
     except Exception as e:
